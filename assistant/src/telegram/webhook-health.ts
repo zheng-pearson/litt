@@ -180,6 +180,21 @@ function recordedWebhookUrl(): string | undefined {
   }
 }
 
+/**
+ * Whether this deployment owns the bot's webhook registration.
+ *
+ * False when an external router registers the shared bot token on the
+ * instances' behalf, in which case there is nothing here to health-check.
+ * Defaults to true so an unreadable config keeps the existing behaviour.
+ */
+function webhookRegistrationIsSelfManaged(): boolean {
+  try {
+    return getConfig().telegram.webhookManaged !== false;
+  } catch {
+    return true;
+  }
+}
+
 /** Name the channel concretely when the bot username is known. */
 function channelLabel(): string {
   const username = getTelegramBotUsername();
@@ -234,6 +249,20 @@ export async function checkTelegramWebhookHealth(): Promise<TelegramWebhookHealt
       status: "skipped",
       detail:
         "Telegram webhook secret is not configured — registration has not been completed, so there is no webhook to check",
+    };
+  }
+
+  // Registration owned elsewhere (see `telegram.webhookManaged`). The sweep
+  // compares Telegram's registered URL against what this deployment recorded
+  // registering, and an instance that never registers records nothing, so
+  // every poll would report `unverified` — or `url_mismatch` if it registered
+  // once before the flag was set. Both would alert the guardian about a
+  // webhook that is working exactly as configured.
+  if (!webhookRegistrationIsSelfManaged()) {
+    return {
+      status: "skipped",
+      detail:
+        "Telegram webhook registration is managed externally (telegram.webhookManaged is false) — this assistant does not own the registration to check",
     };
   }
 

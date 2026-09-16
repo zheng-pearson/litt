@@ -368,6 +368,21 @@ async function reconcileTelegramWebhookNow(
     ? { credentials: caches.credentials, configFile: caches?.configFile }
     : undefined;
 
+  // `telegram.webhookManaged: false` hands the registration to an external
+  // owner, so this deployment must not touch it in either direction. It is
+  // checked ahead of the explicit-disable branch below precisely because that
+  // branch calls deleteWebhook: the deployments that set this flag share one
+  // bot token between many instances, and a single instance deregistering
+  // would stop delivery for all of them. Returning here leaves the
+  // registration exactly as the owner set it while `/webhooks/telegram` keeps
+  // serving forwarded updates.
+  if (caches?.configFile?.getBoolean("telegram", "webhookManaged") === false) {
+    log.debug(
+      "Skipping webhook reconciliation: telegram.webhookManaged is false (registration is owned externally)",
+    );
+    return;
+  }
+
   // An explicit `ingress.enabled: false` must actively deregister, not just
   // skip: Telegram keeps delivering to the last registered webhook URL until
   // deleteWebhook (or a replacement setWebhook) runs, and the gateway's

@@ -68,6 +68,27 @@ export const TelegramConfigSchema = z
       .string({ error: "telegram.apiBaseUrl must be a string" })
       .default("https://api.telegram.org")
       .describe("Base URL for the Telegram Bot API"),
+    // Opt out of owning the bot's webhook registration entirely.
+    //
+    // Telegram binds one webhook URL per bot token, so a deployment that
+    // fronts several assistants behind one bot (an external router that
+    // receives every update and forwards each to the instance that owns that
+    // sender) must be the only writer of that registration. Left true, every
+    // instance reconciles the shared token to its own address and the last
+    // writer wins.
+    //
+    // Distinct from `ingress.enabled: false`, which is a decision not to
+    // accept webhooks and therefore actively calls deleteWebhook — on a shared
+    // bot that would tear down the router's registration for every instance.
+    // This flag instead means "someone else owns it": the reconciler neither
+    // registers nor deregisters, and `/webhooks/telegram` keeps serving
+    // whatever the router forwards.
+    webhookManaged: z
+      .boolean({ error: "telegram.webhookManaged must be a boolean" })
+      .default(true)
+      .describe(
+        "Whether this deployment registers and maintains the bot's Telegram webhook. Set false when an external router owns the registration for a shared bot token.",
+      ),
     // Written by the gateway reconciler, read by the health sweep. Deployment
     // state rather than user configuration: it records where this deployment
     // last pointed Telegram, so the sweep can tell our own registration from a
