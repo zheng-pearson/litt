@@ -1,0 +1,7 @@
+# Written by Intuition. The index is generated from your code and machine-specific;
+# it is rebuilt whenever it is missing, so there is nothing here worth committing --
+# except map/, the shared component map, which every teammate should get from git.
+*
+!/.gitignore
+!/map/
+!/map/**
