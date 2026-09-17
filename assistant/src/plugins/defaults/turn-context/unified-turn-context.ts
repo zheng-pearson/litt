@@ -17,6 +17,8 @@ import { resolveCapabilities } from "../../../runtime/capabilities.js";
  */
 export interface UnifiedTurnContextOptions {
   timestamp: string;
+  localDate?: string;
+  nextLocalDate?: string;
   interfaceName?: string;
   clientOs?: string;
   /**
@@ -99,6 +101,10 @@ export function buildUnifiedTurnContextBlock(
 
   const lines: string[] = ["<turn_context>"];
   lines.push(`current_time: ${options.timestamp}`);
+  if (options.localDate && options.nextLocalDate) {
+    lines.push(`local_date: ${options.localDate}`);
+    lines.push(`next_local_date: ${options.nextLocalDate}`);
+  }
   const configuredUserTimezone = options.configuredUserTimezone ?? null;
   const clientDeviceTimezone =
     options.clientTimezone ?? options.detectedTimezone ?? null;

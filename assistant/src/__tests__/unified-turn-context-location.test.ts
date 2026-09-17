@@ -18,6 +18,16 @@ import { buildUnifiedTurnContextBlock } from "../plugins/defaults/turn-context/u
 const TS = "2026-09-02T16:00:00.000Z";
 
 describe("unified-turn-context chat_id and thread_id", () => {
+  test("renders deterministic local date anchors when supplied", () => {
+    const block = buildUnifiedTurnContextBlock({
+      timestamp: "2026-09-16 (Wednesday) 22:00:00 -07:00 (America/Los_Angeles)",
+      localDate: "2026-09-16",
+      nextLocalDate: "2026-09-17",
+    });
+    expect(block).toContain("local_date: 2026-09-16");
+    expect(block).toContain("next_local_date: 2026-09-17");
+  });
+
   test("renders both lines for a threaded Slack turn", () => {
     const block = buildUnifiedTurnContextBlock({
       timestamp: TS,

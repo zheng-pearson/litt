@@ -2457,6 +2457,12 @@ export async function applyRuntimeInjections(
         detectedTimezone,
       })
     : undefined;
+  const localDate = timestamp?.match(/^\d{4}-\d{2}-\d{2}/)?.[0];
+  const nextLocalDate = localDate
+    ? new Date(new Date(`${localDate}T12:00:00Z`).getTime() + 86_400_000)
+        .toISOString()
+        .slice(0, 10)
+    : undefined;
   const timeSinceLastMessage = temporalSnapshot?.timeSinceLastMessage ?? null;
 
   // The `<active_subagents>` status block is sourced from the live
@@ -2519,6 +2525,8 @@ export async function applyRuntimeInjections(
     isBackgroundConversation,
     activeDocuments,
     timestamp,
+    localDate,
+    nextLocalDate,
     interfaceName,
     clientOs,
     visibleApp,

@@ -1,6 +1,6 @@
 ---
 name: outlook-calendar
-description: View Outlook Calendar events for any day, create and manage events, and check availability
+description: View Outlook Calendar events for any day, create and manage events, and check availability. For relative dates, mechanically resolve the local date from the configured user timezone before querying.
 compatibility: "Designed for Vellum personal assistants"
 metadata:
   icon: assets/icon.svg

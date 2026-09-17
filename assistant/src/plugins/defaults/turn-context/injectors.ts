@@ -33,6 +33,8 @@ const unifiedTurnContextInjector: Injector = {
     }
     const text = buildUnifiedTurnContextBlock({
       timestamp,
+      localDate: ctx.localDate,
+      nextLocalDate: ctx.nextLocalDate,
       interfaceName: ctx.interfaceName,
       clientOs: ctx.clientOs,
       visibleApp: ctx.visibleApp,

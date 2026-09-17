@@ -144,6 +144,10 @@ export interface TurnContext {
    * when absent the `unified-turn-context` injector emits nothing.
    */
   readonly timestamp?: string;
+  /** Calendar date in the same effective timezone as `timestamp`. */
+  readonly localDate?: string;
+  /** Date immediately following `localDate`, computed without host-timezone input. */
+  readonly nextLocalDate?: string;
   /** Human-readable interface label (e.g. "vellum", "telegram"). */
   readonly interfaceName?: string;
   /**
