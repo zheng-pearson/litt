@@ -433,6 +433,7 @@ export async function emitNotificationSignal<TEventName extends string>(
       signal.routingIntent,
       connectedChannels,
       signal.sourceChannel,
+      signal.routingHints,
     );
 
     // Step 2.5c: Access-request signals carry a decisionable canonical

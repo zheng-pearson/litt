@@ -36,6 +36,42 @@ function makeDecision(
 // -- Tests -------------------------------------------------------------------
 
 describe("routing intent enforcement", () => {
+  describe("explicit single-channel preferences", () => {
+    for (const key of ["preferred_channels", "preferredChannels"]) {
+      test(`${key} preserves Telegram after urgency prepends vellum`, () => {
+        const enforced = enforceRoutingIntent(
+          makeDecision({ selectedChannels: ["vellum", "telegram"] }),
+          "single_channel",
+          ["vellum", "telegram"],
+          "scheduler",
+          { [key]: ["telegram"] },
+        );
+        expect(enforced.selectedChannels).toEqual(["telegram"]);
+      });
+    }
+
+    test("ignores unavailable and malformed preferences", () => {
+      const enforced = enforceRoutingIntent(
+        makeDecision(),
+        "single_channel",
+        ["vellum", "telegram"],
+        "telegram",
+        { preferred_channels: [null, 42, "slack"] },
+      );
+      expect(enforced.selectedChannels).toEqual(["telegram"]);
+    });
+
+    test("does not invent a channel for an empty decision", () => {
+      const enforced = enforceRoutingIntent(
+        makeDecision({ selectedChannels: [] }),
+        "single_channel",
+        [],
+        "scheduler",
+      );
+      expect(enforced.selectedChannels).toEqual([]);
+    });
+  });
+
   describe("all_channels intent", () => {
     test("forces selection to all connected channels", () => {
       const decision = makeDecision({ selectedChannels: ["vellum"] });
@@ -225,6 +261,30 @@ describe("routing intent enforcement", () => {
 
       expect(enforced.selectedChannels).toEqual(["vellum"]);
       expect(enforced.reasoningSummary).toBe(decision.reasoningSummary);
+    });
+
+    // Reproduces a scheduled reminder firing: `schedule.notify` emits with
+    // `urgency: "high"`, so step 2.5a in emit-signal prepends `vellum` before
+    // enforcement runs. The source channel is `scheduler`, which is not a
+    // deliverable channel, so the cap falls back to the first selected
+    // channel and lands on the internal inbox instead of the channel the
+    // reminder was created to reach.
+    test("scheduled reminder with a preferred channel is capped to that channel, not the urgency-prepended inbox", () => {
+      const decision = makeDecision({
+        selectedChannels: ["vellum", "telegram"],
+        reasoningSummary: "LLM selected telegram (vellum forced: high urgency)",
+      });
+      const connected: NotificationChannel[] = ["vellum", "telegram"];
+
+      const enforced = enforceRoutingIntent(
+        decision,
+        "single_channel",
+        connected,
+        "scheduler",
+        { preferred_channels: ["telegram"] },
+      );
+
+      expect(enforced.selectedChannels).toEqual(["telegram"]);
     });
   });
 

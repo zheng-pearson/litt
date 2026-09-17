@@ -35,6 +35,12 @@ The candidate set is serialized into a compact `<conversation-candidates>` block
 
 ### 3. Decision
 
+For assistant-authored notifications without explicit channel preferences,
+`notifications.defaultChannels` selects the deployment's default destinations.
+An empty list preserves the standard internal-inbox default. A configured
+destination with no available channel fails visibly instead of falling back to
+internal-only delivery. Explicit channel preferences retain their existing semantics.
+
 The decision engine (`decision-engine.ts`) sends the signal to an LLM (configured via `llm.callSites.notificationDecision`) along with available channels, the user's preference summary, and the conversation candidate set. The LLM responds with a structured decision: whether to notify, which channels, rendered copy per channel, a deduplication key, and **per-channel conversation actions**.
 
 **Conversation actions:** For each selected channel, the LLM decides:
@@ -238,17 +244,19 @@ Schedules (both recurring and one-shot) carry optional routing metadata that con
 
 The `routing_intent` field on each `schedule_jobs` row specifies the desired channel coverage:
 
-| Intent           | Behavior                                              | When to use                                                         |
-| ---------------- | ----------------------------------------------------- | ------------------------------------------------------------------- |
-| `single_channel` | Default LLM-driven routing (no override)              | Standard schedules where the decision engine picks the best channel |
-| `multi_channel`  | Ensures delivery on 2+ channels when 2+ are connected | Important schedules the user wants on both desktop and phone        |
-| `all_channels`   | Forces delivery on every connected channel            | Critical schedules that must reach the user everywhere              |
+| Intent           | Behavior                                                                    | When to use                                                  |
+| ---------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `single_channel` | Caps delivery to one connected channel, honoring explicit preferences first | Schedules requested on one particular channel                |
+| `multi_channel`  | Ensures delivery on 2+ channels when 2+ are connected                       | Important schedules the user wants on both desktop and phone |
+| `all_channels`   | Forces delivery on every connected channel                                  | Critical schedules that must reach the user everywhere       |
 
 The default is `all_channels`. Routing intent is persisted in the `schedule_jobs` table (`routing_intent` column) and carried through the notification signal as `routingIntent`.
 
 ### Routing Hints
 
 The `routing_hints_json` field is free-form JSON metadata passed alongside the routing intent. It flows through the signal as `routingHints` and is included in the decision engine prompt, allowing producers to communicate channel preferences or contextual hints without requiring schema changes.
+
+For `single_channel`, `preferred_channels` (or the compatible `preferredChannels` spelling) selects the first connected channel in that list before falling back to the source channel and then the decision's first selected channel. This preserves the requested destination when urgency adds internal notification surfaces.
 
 ### Trigger-Time Enforcement Flow
 
