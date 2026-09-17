@@ -301,6 +301,14 @@ backup and rejects an unknown patch kind.
 `RUNTIME_PATCH_KIND=credential-health-retry-v1` applies the unexpected-401
 refresh/retry correction after the original credential-health patch. Omit
 `APPLY_RUNTIME_HEALTH` for a read-only patch applicability check.
+`RUNTIME_PATCH_KIND=oauth-recovery-v1` removes the expired-consent/reconnect
+diagnosis for HTTP 403 from interactive OAuth pings and requests. HTTP 401
+recovery and Google's API-disabled guidance remain intact. This patch changes
+only the OAuth command route module and does not alter credentials or consent.
+Run the read-only applicability check before applying it. The patch targets the
+route layout in this repository; an older hosted runtime rejected its request
+hunk during preflight without changing source. A successful repository merge
+does not establish that this patch has been applied to a hosted runtime.
 
 `APPLY_HEARTBEAT_GUIDANCE=true` with the same explicit `RUNTIME_TENANT_ID`
 adds the shared connection-evidence procedure to the existing checklist without

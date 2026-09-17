@@ -586,6 +586,26 @@ describe("POST oauth/ping", () => {
     expect(result.status).toBe(401);
     expect(result.hint).toContain("oauth connect");
   });
+
+  test.each([403, 429, 503])(
+    "does not recommend reconnecting for HTTP %s",
+    async (status) => {
+      mockProviders.google = {
+        ...baseProvider,
+        pingUrl: "https://api.google.com/v1/me",
+      };
+      mockResolveResponse = { status, headers: {}, body: {} };
+      const result = await getRoute("POST", "oauth/ping").handler(
+        makeArgs({ body: { provider: "google" } }),
+      );
+      expect(result).toEqual({
+        ok: false,
+        provider: "google",
+        status,
+        error: `Ping failed with HTTP ${status}`,
+      });
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -695,7 +715,7 @@ describe("POST oauth/request", () => {
     expect(result.hint).not.toContain("oauth connect");
   });
 
-  test("403 as a person's OAuth integration keeps the OAuth recovery steps", async () => {
+  test("403 does not diagnose expired consent or recommend reconnecting", async () => {
     mockResolveResponse = {
       status: 403,
       headers: { "content-type": "application/json" },
@@ -707,9 +727,8 @@ describe("POST oauth/request", () => {
       }),
     )) as { ok: boolean; status: number; hint?: string };
     expect(result.status).toBe(403);
-    expect(result.hint).toContain("assistant oauth status google");
-    expect(result.hint).toContain("oauth connect");
-    expect(result.hint).not.toContain("channels get");
+    expect(result.ok).toBe(false);
+    expect(result.hint).toBeUndefined();
   });
 
   test("passes a pre-parsed string body through to the connection unchanged", async () => {

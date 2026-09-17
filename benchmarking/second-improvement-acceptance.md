@@ -3,6 +3,102 @@
 Completion requires deployed behavior observed in Telegram. Local tests and
 instruction text establish implementation evidence only.
 
+## Current checkpoint after repository transition
+
+The nine-item goal remains incomplete. The chronological entries below retain
+their original observations; later entries supersede earlier deployment status.
+
+Acceptance summary: 1 of 9 verified, 8 partial. Implementation or deployment
+alone does not close an item.
+
+### Gmail live retest, September 17, 14:18-14:20 Pacific
+
+The user explicitly approved temporary Gmail disconnect/reconnect. Second
+confirmed Gmail disconnected and Outlook/Pearson unchanged. The exact question
+"Have you connected Gmail?" at 14:19:43 received a progress preview observed
+7.6 seconds later, then only "No. Gmail is currently disconnected." The final
+reply contained no link. Requirement 3 therefore still fails in the live chat;
+installed skill instructions are not sufficient evidence of the behavior.
+
+An explicit reconnect request at 14:20:15 produced a secure Gmail link and
+promised an automatic read-only Inbox check after consent. The browser reached
+Google's account chooser with Gmail read-only scope. User consent is pending;
+Gmail remains disconnected until that succeeds. No email/draft/calendar write
+was requested. Receipt and resumption acceptance remain unproven for this flow.
+
+### Gmail routing regressions after rollout
+
+Deployment `dpl_Ap2yoQ5BHGx1ri8HvWbzrToqpbjD` promoted the narrowed setup
+opt-out wording from `9d71dcfa90`, preserving the Pearson identity instructions
+and partner-format exception. Only connections.ts and hosted-skills.ts changed
+against the SHA-verified live baseline. Its health check passed.
+
+The exact question at 14:25:54 still failed: Second answered from history,
+provided no link, and said completed research was running. Runtime diagnostics
+subsequently confirmed the message reached the assistant at 14:26:18 after
+gateway setup delay; the quick responder then chose a direct answer.
+
+After a routing repair was reported healthy at 14:30:26, the same question at
+14:30:49 produced a progress acknowledgement observed after 13.5 seconds. Its
+first substantive response, observed after 78.3 seconds without refreshing,
+contained a Google authorization link, but the callback was localhost and the
+scopes included modification, sending, Drive and contacts. This is a failed
+hosted-flow test, not successful proactive setup. The user was warned not to use
+that link. No consent was granted through it. Repair and retest remain required.
+
+Isolated recovery regression coverage verifies that overlapping workers cannot
+send the same unexpired leased receipt twice, and a rejected send retains its
+encrypted queued payload without logging successful delivery. A subsequent
+accepted retry logs once, clears the payload, and is not sent again on another
+drain. The 12 scoped worker-recovery tests and hosted-router typecheck pass.
+This does not prove exactly-once delivery after an ambiguous network response,
+lease expiry during a send, or a crash after Telegram acceptance before the
+database completion write. Those boundaries remain open.
+
+| Item | Status | Outstanding evidence |
+| --- | --- | --- |
+| 1. Responsiveness and queueing | Partial | Consistent acknowledgement and useful-progress timing, including interruptions. |
+| 2. Canonical Outlook state | Partial | Interactive and background checks agree under refresh and scope failures. |
+| 3. Proactive Gmail setup | Partial | Approved disconnect performed. Latest first-reply link used the wrong callback and scopes; valid hosted-link retest required. |
+| 4. OAuth resumption | Partial | Outlook passed; equivalent Gmail continuation remains untested. |
+| 5. Duplicate and stale suppression | Partial | Controlled live suppression and retry evidence. |
+| 6. Safe external communication | Partial | Remove unsupported draft claims and independently verify no external send. |
+| 7. Six-section legal briefs | Verified | Repeated live briefs and correction preserved all six sections; retain regression coverage. |
+| 8. Plain-language recovery | Partial | Expired Outlook link passed; temporary and API-disabled failures remain untested. |
+| 9. Immediate connection receipt | Partial | Outlook delivered; exact latency and Gmail parity remain unverified. |
+
+Pearson released its live test window to the partner task while awaiting user
+consent. The partner task is implementing and testing responses to new messages
+during ongoing Telegram work. This acceptance task keeps the shared chat clear
+and must independently assess the resulting timing and safety evidence.
+
+- Receipt timing was promoted as `dpl_C8fPM6BHxDSBh8cmcwqgPNWeWLna` after a
+  staging health check and a second live-baseline check. Only worker.ts and
+  store.ts differed from the deployed Pearson baseline. The older statement
+  below that timing is not promoted is historical, not current status.
+- Outlook receipt and automatic continuation were delivered in Telegram without
+  a new prompt. Exact callback-to-receipt timing and equivalent Gmail behavior
+  remain unverified.
+- The later trace inspection found successful Outlook-related tool calls,
+  including two skill executions, in the 13:34 turn. The sanitized evidence
+  does not identify their exact read targets or independently prove both reads.
+- Canonical background/interactive state, deliberately stale live delivery,
+  consistent latency, and disconnected Gmail setup still require acceptance.
+- Legal briefs repeatedly contain all six sections, and approval attribution
+  improved. The Cedar draft's unsupported claim of work underway remains a
+  failure. A draft labeled unsent is not itself an outbound-mail audit.
+- The earlier checkpoint had Gmail connected and disconnect approval pending.
+  The approved September 17 test above supersedes that state: Gmail is
+  disconnected and a correct hosted reconnect flow still needs verification.
+  No model/effort change has been approved or made here.
+
+Work resumed from fork commit `1f3fa92c4e` on a separate acceptance worktree.
+The 44 credential-health tests passed after the repository transition. Pearson
+owns the next live Telegram window, followed by the partner task's overlap and
+latency tests. This task sends no live prompts or shared deployments during
+those windows. Their evidence must be reviewed against this goal's criteria,
+not treated as completion solely because another task reports success.
+
 Router follow-up: deployment `dpl_69ZRvhyEdPN3wjktRFqRrkNz6eQv` passed its
 health check and was promoted on September 17. Callback ticket consumption and
 receipt/continuation jobs commit atomically; rollback and expiry regressions are

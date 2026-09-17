@@ -17,6 +17,7 @@ if (tenant.id !== process.env.RUNTIME_TENANT_ID || tenant.status !== "active" ||
 const client = new Daytona({ apiKey: config.DAYTONA_API_KEY, target: config.DAYTONA_TARGET });
 const sandbox = await client.get(tenant.sandbox_id);
 const upgrades: Record<string, { file: string; paths: string[] }> = {
+  "oauth-recovery-v1": { file: "runtime-oauth-recovery.patch", paths: ["assistant/src/runtime/routes/oauth-commands-routes.ts"] },
   "telegram-freshness-v1": { file: "runtime-telegram-freshness.patch", paths: ["assistant/src/messaging/providers/retry-policy.ts", "assistant/src/messaging/providers/telegram-bot/api.ts", "assistant/src/messaging/providers/telegram-bot/send.ts", "assistant/src/notifications/types.ts", "assistant/src/notifications/broadcaster.ts", "assistant/src/notifications/adapters/telegram.ts"] },
   "telegram-fallback-v1": { file: "runtime-telegram-fallback.patch", paths: ["assistant/src/notifications/adapters/telegram.ts", "assistant/src/messaging/providers/telegram-bot/send.ts"] },
   "credential-health-v1": { file: "runtime-health.patch", paths: ["assistant/src/credential-health/credential-health-service.ts", "assistant/src/heartbeat/heartbeat-service.ts", "assistant/src/notifications/emit-signal.ts"] },
