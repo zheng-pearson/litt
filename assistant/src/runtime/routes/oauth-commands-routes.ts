@@ -673,7 +673,7 @@ async function handlePing({ body = {} }: RouteHandlerArgs) {
     error: `Ping failed with HTTP ${response.status}`,
   };
 
-  if (response.status === 401 || response.status === 403) {
+  if (response.status === 401) {
     payload.hint =
       `Run 'assistant oauth status ${b.provider}' to check connection health. ` +
       `To reconnect, run 'assistant oauth connect --help'.`;
@@ -983,7 +983,7 @@ export async function handleRequest({ body = {} }: RouteHandlerArgs) {
       "The Google API is disabled in the OAuth application's Google Cloud project. " +
       "The application operator must enable the requested API, then retry this request. " +
       "Reconnecting the account does not enable an API or repair this configuration error.";
-  } else if (response.status === 401 || response.status === 403) {
+  } else if (response.status === 401) {
     // The recovery steps follow the credential's kind, not the door the
     // request came through: a channel bot's token was stored by the channel's
     // setup, so the OAuth status and connect commands cannot repair it.
