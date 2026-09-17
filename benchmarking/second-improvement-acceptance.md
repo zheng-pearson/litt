@@ -59,7 +59,7 @@ database completion write. Those boundaries remain open.
 | --- | --- | --- |
 | 1. Responsiveness and queueing | Partial | Consistent acknowledgement and useful-progress timing, including interruptions. |
 | 2. Canonical Outlook state | Partial | Interactive and background checks agree under refresh and scope failures. |
-| 3. Proactive Gmail setup | Partial | First-reply link while disconnected; temporary disconnect needs user approval. |
+| 3. Proactive Gmail setup | Partial | Approved disconnect performed. Latest first-reply link used the wrong callback and scopes; valid hosted-link retest required. |
 | 4. OAuth resumption | Partial | Outlook passed; equivalent Gmail continuation remains untested. |
 | 5. Duplicate and stale suppression | Partial | Controlled live suppression and retry evidence. |
 | 6. Safe external communication | Partial | Remove unsupported draft claims and independently verify no external send. |
@@ -87,8 +87,10 @@ and must independently assess the resulting timing and safety evidence.
 - Legal briefs repeatedly contain all six sections, and approval attribution
   improved. The Cedar draft's unsupported claim of work underway remains a
   failure. A draft labeled unsent is not itself an outbound-mail audit.
-- Gmail remains connected; the requested temporary disconnect/reconnect test
-  has not been approved. No model/effort change has been approved or made here.
+- The earlier checkpoint had Gmail connected and disconnect approval pending.
+  The approved September 17 test above supersedes that state: Gmail is
+  disconnected and a correct hosted reconnect flow still needs verification.
+  No model/effort change has been approved or made here.
 
 Work resumed from fork commit `1f3fa92c4e` on a separate acceptance worktree.
 The 44 credential-health tests passed after the repository transition. Pearson
