@@ -12,6 +12,7 @@
 import { v4 as uuid } from "uuid";
 
 import { getDeliverableChannels } from "../channels/config.js";
+import { getConfig } from "../config/loader.js";
 import { findContactInfoById } from "../contacts/contact-store.js";
 import {
   anyGuardian,
@@ -873,11 +874,26 @@ export async function evaluateSignal(
     const isUrgent =
       signal.attentionHints.urgency === "critical" ||
       signal.attentionHints.urgency === "high";
-    const defaultChannels: NotificationChannel[] = isUrgent
-      ? [...availableChannels]
-      : availableChannels.includes("vellum")
-        ? ["vellum" as NotificationChannel]
-        : [];
+    const configuredChannels = getConfig().notifications.defaultChannels ?? [];
+    const configuredAvailable = availableChannels.filter((channel) =>
+      configuredChannels.includes(channel),
+    );
+    if (
+      !Array.isArray(payload.preferredChannels) &&
+      configuredChannels.length > 0 &&
+      configuredAvailable.length === 0
+    ) {
+      throw new Error("Configured notification destinations are unavailable");
+    }
+    const defaultChannels: NotificationChannel[] =
+      !Array.isArray(payload.preferredChannels) &&
+      configuredAvailable.length > 0
+        ? configuredAvailable
+        : isUrgent
+          ? [...availableChannels]
+          : availableChannels.includes("vellum")
+            ? ["vellum" as NotificationChannel]
+            : [];
     // Honor `--preferred-channels` as ADDITIVE push targets on top of
     // the default channel set. The notification center (vellum) is the
     // always-on canonical inbox; preferred channels add push surfaces
@@ -1115,13 +1131,14 @@ async function classifyWithLLM(
  * - `all_channels`: force selected channels to all connected channels.
  * - `multi_channel`: ensure at least 2 channels when 2+ are connected.
  * - `single_channel`: cap to a single channel. When explicitly set, reduces
- *   selected channels to one — preferring the source channel if present.
+ *   selected channels to one, preferring explicit hints and then the source.
  */
 export function enforceRoutingIntent(
   decision: NotificationDecision,
   routingIntent: RoutingIntent | undefined,
   connectedChannels: NotificationChannel[],
   sourceChannel?: string,
+  routingHints?: Record<string, unknown>,
 ): NotificationDecision {
   if (!routingIntent) {
     return decision;
@@ -1132,16 +1149,29 @@ export function enforceRoutingIntent(
       return decision;
     }
 
-    // Force delivery to the source channel only. If the source channel
-    // is among the connected channels, use it regardless of what the LLM
-    // picked (even if the LLM picked exactly one wrong channel).
-    // Otherwise fall back to capping at the first selected channel.
+    // Explicit channel preferences take precedence over the producer's
+    // source, which can be an internal channel such as scheduler.
+    const rawPreferred =
+      routingHints?.preferred_channels ?? routingHints?.preferredChannels;
+    const hintedChannel = Array.isArray(rawPreferred)
+      ? rawPreferred.find(
+          (channel): channel is NotificationChannel =>
+            typeof channel === "string" &&
+            connectedChannels.includes(channel as NotificationChannel),
+        )
+      : undefined;
     const sourceIsConnected =
       sourceChannel &&
       connectedChannels.includes(sourceChannel as NotificationChannel);
-    const preferred = sourceIsConnected
-      ? (sourceChannel as NotificationChannel)
-      : decision.selectedChannels[0];
+    const preferred =
+      hintedChannel ??
+      (sourceIsConnected
+        ? (sourceChannel as NotificationChannel)
+        : decision.selectedChannels[0]);
+
+    if (!preferred) {
+      return decision;
+    }
 
     // No change needed if the decision already matches.
     if (

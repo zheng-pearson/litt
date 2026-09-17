@@ -36,6 +36,42 @@ function makeDecision(
 // -- Tests -------------------------------------------------------------------
 
 describe("routing intent enforcement", () => {
+  describe("explicit single-channel preferences", () => {
+    for (const key of ["preferred_channels", "preferredChannels"]) {
+      test(`${key} preserves Telegram after urgency prepends vellum`, () => {
+        const enforced = enforceRoutingIntent(
+          makeDecision({ selectedChannels: ["vellum", "telegram"] }),
+          "single_channel",
+          ["vellum", "telegram"],
+          "scheduler",
+          { [key]: ["telegram"] },
+        );
+        expect(enforced.selectedChannels).toEqual(["telegram"]);
+      });
+    }
+
+    test("ignores unavailable and malformed preferences", () => {
+      const enforced = enforceRoutingIntent(
+        makeDecision(),
+        "single_channel",
+        ["vellum", "telegram"],
+        "telegram",
+        { preferred_channels: [null, 42, "slack"] },
+      );
+      expect(enforced.selectedChannels).toEqual(["telegram"]);
+    });
+
+    test("does not invent a channel for an empty decision", () => {
+      const enforced = enforceRoutingIntent(
+        makeDecision({ selectedChannels: [] }),
+        "single_channel",
+        [],
+        "scheduler",
+      );
+      expect(enforced.selectedChannels).toEqual([]);
+    });
+  });
+
   describe("all_channels intent", () => {
     test("forces selection to all connected channels", () => {
       const decision = makeDecision({ selectedChannels: ["vellum"] });

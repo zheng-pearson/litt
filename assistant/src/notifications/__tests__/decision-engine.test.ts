@@ -8,6 +8,14 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 
 // ── Mocks (must precede imports from mocked modules) ──────────────────
 
+let defaultChannels: string[] = [];
+mock.module("../../config/loader.js", () => ({
+  getConfig: () => ({ notifications: { defaultChannels } }),
+}));
+beforeEach(() => {
+  defaultChannels = [];
+});
+
 mock.module("../../channels/config.js", () => ({
   getDeliverableChannels: () => ["vellum", "telegram", "platform"],
 }));
@@ -158,6 +166,31 @@ function makeLlmSignal(): NotificationSignal {
 // ── Tests ─────────────────────────────────────────────────────────────
 
 describe("assistant_tool pass-through in notification decision engine", () => {
+  test("uses the configured chat destination when none is specified", async () => {
+    defaultChannels = ["telegram"];
+    const decision = await evaluateSignal(makeAssistantToolSignal(), [
+      "vellum",
+      "telegram",
+    ]);
+    expect(decision.selectedChannels).toEqual(["telegram"]);
+  });
+  test("does not override an explicitly selected destination", async () => {
+    defaultChannels = ["telegram"];
+    const signal = makeAssistantToolSignal({
+      contextPayload: {
+        requestedMessage: "hello",
+        preferredChannels: ["vellum"],
+      },
+    });
+    const decision = await evaluateSignal(signal, ["vellum", "telegram"]);
+    expect(decision.selectedChannels).toEqual(["vellum"]);
+  });
+  test("does not claim internal delivery when the configured chat is unavailable", async () => {
+    defaultChannels = ["telegram"];
+    await expect(
+      evaluateSignal(makeAssistantToolSignal(), ["vellum"]),
+    ).rejects.toThrow("destinations are unavailable");
+  });
   test("uses producer-supplied title and body verbatim, no LLM call", async () => {
     const signal = makeAssistantToolSignal();
     const decision = await evaluateSignal(signal, [
