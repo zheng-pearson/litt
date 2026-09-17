@@ -164,9 +164,8 @@ async function attachCredentialRecordBackend(
   client: CesClient | undefined,
 ): Promise<void> {
   const { CesRpcRecordBackend } = await import("./ces-rpc-record-backend.js");
-  const { setCredentialRecordBackend } = await import(
-    "../tools/credentials/metadata-store.js"
-  );
+  const { setCredentialRecordBackend } =
+    await import("../tools/credentials/metadata-store.js");
   if (!client) {
     setCredentialRecordBackend(undefined);
     return;
@@ -433,7 +432,7 @@ async function tryLazyCesConnect(): Promise<CesClient | undefined> {
 
   _lazyConnectPromise = (async () => {
     try {
-      const pm = createCesProcessManager({});
+      const pm = createCesProcessManager({ keepAlive: false });
       const transport = await pm.start();
       const client = createCesClient(transport);
       const { accepted, reason } = await client.handshake();

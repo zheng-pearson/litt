@@ -62,6 +62,9 @@ export interface CesProcessManagerConfig {
 
   /** Logger override. Defaults to the module logger; injected in tests. */
   logger?: PmLogger;
+
+  /** Whether an idle credential socket keeps the process alive. Defaults to true. */
+  keepAlive?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -216,6 +219,9 @@ export function createCesProcessManager(
       SOCKET_CONNECT_TIMEOUT_MS,
     );
     managedSocket = socket;
+    if (config.keepAlive === false) {
+      socket.unref();
+    }
 
     pmLog.info("Connected to CES over socket");
 
