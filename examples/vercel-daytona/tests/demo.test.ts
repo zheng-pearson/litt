@@ -1350,6 +1350,76 @@ describe("OAuth and identity binding", () => {
 });
 
 describe("worker recovery and secrets", () => {
+  test("overlapping receipt drains cannot send the same leased notice twice", async () => {
+    const tenant = await active();
+    await store.enqueue("oauth-notice:overlap", tenant.id, "oauth_notice", { provider: "outlook", resuming: true });
+    let started!: () => void;
+    const sending = new Promise<void>((resolve) => { started = resolve; });
+    let release!: () => void;
+    const accepted = new Promise<void>((resolve) => { release = resolve; });
+    let attempts = 0;
+    const delayedWorker = new Worker(config, store, runtime, async (recipient, text) => {
+      attempts++;
+      started();
+      await accepted;
+      sent.push({ id: recipient, text });
+    });
+    const firstDrain = delayedWorker.drain("oauth_notice");
+    try {
+      await sending;
+      await worker.drain("oauth_notice");
+      expect(attempts).toBe(1);
+      expect(sent).toHaveLength(0);
+    } finally {
+      release();
+      await firstDrain;
+    }
+    await worker.drain("oauth_notice");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.id).toBe(tenant.telegram_id);
+    expect(calls).toHaveLength(0);
+  });
+
+  test("a rejected receipt remains retryable and logs delivery only after acceptance", async () => {
+    const tenant = await active();
+    const id = "oauth-notice:rejected-send";
+    await store.enqueue(id, tenant.id, "oauth_notice", { provider: "google", resuming: true });
+    let rejectSend = true;
+    const recoveringWorker = new Worker(config, store, runtime, async (recipient, text) => {
+      if (rejectSend) {
+        throw new Error("Telegram rejected delivery");
+      }
+      sent.push({ id: recipient, text });
+    });
+    const logged = spyOn(console, "info").mockImplementation(() => {});
+    try {
+      await recoveringWorker.drain("oauth_notice");
+      expect(sent).toHaveLength(0);
+      expect(logged).not.toHaveBeenCalled();
+      const [pending] = await store.db.query<{ status: string; attempts: number; payload: string }>(
+        "SELECT status,attempts,payload FROM demo_jobs WHERE id=$1", [id],
+      );
+      expect(pending).toMatchObject({ status: "pending", attempts: 1 });
+      expect(pending?.payload).not.toBe("");
+      await store.db.query("UPDATE demo_jobs SET available_at=now() WHERE id=$1", [id]);
+      rejectSend = false;
+      await recoveringWorker.drain("oauth_notice");
+      await recoveringWorker.drain("oauth_notice");
+      expect(sent).toHaveLength(1);
+      expect(sent[0]?.id).toBe(tenant.telegram_id);
+      expect(logged).toHaveBeenCalledTimes(1);
+      expect(logged).toHaveBeenCalledWith("OAuth receipt delivered", {
+        provider: "google", channel: "telegram", attempt: 2,
+        sendMs: expect.any(Number), queueToReceiptMs: expect.any(Number),
+      });
+      expect(await store.db.query("SELECT status,payload FROM demo_jobs WHERE id=$1", [id]))
+        .toEqual([{ status: "done", payload: "" }]);
+      expect(calls).toHaveLength(0);
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
   test("OAuth continuation retries keep the original conversation and idempotency key", async () => {
     const tenant = await active();
     const id = "oauth-resume:test-retry";
