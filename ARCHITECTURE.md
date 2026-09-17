@@ -4,6 +4,9 @@ This file is the cross-system architecture index. Detailed designs live in domai
 
 ## Architecture Docs
 
+Telegram partner workflows use the existing assistant, memory, connectors, and
+scheduler through an installable skill. See [Partner workflows](docs/partner-workflows.md).
+
 | Domain                                      | Architecture Doc                                                                                   |
 | ------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | Assistant runtime                           | [`assistant/ARCHITECTURE.md`](assistant/ARCHITECTURE.md)                                           |

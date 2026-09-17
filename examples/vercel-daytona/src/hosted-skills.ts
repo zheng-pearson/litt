@@ -8,9 +8,13 @@ export interface HostedSkill {
   bodyMarkdown: string;
 }
 
+export function renderHostedSkill(definition: HostedSkill): string {
+  return `---\nname: ${JSON.stringify(definition.name)}\ndescription: ${JSON.stringify(definition.description)}\nmetadata:\n  vellum:\n    always-candidate: true\n---\n\n${definition.bodyMarkdown}`;
+}
+
 export async function writeHostedSkill(tenant: Tenant, runtime: Runtime, definition: HostedSkill): Promise<boolean> {
   const { skillId } = definition;
-  const content = `---\nname: ${JSON.stringify(definition.name)}\ndescription: ${JSON.stringify(definition.description)}\nmetadata:\n  vellum:\n    always-candidate: true\n---\n\n${definition.bodyMarkdown}`;
+  const content = renderHostedSkill(definition);
   const existing = await runtime.request(tenant, `/v1/skills/${skillId}`);
   if (existing.ok) {
     const file = await runtime.request(tenant, `/v1/skills/${skillId}/files/content?path=SKILL.md`);
@@ -74,7 +78,10 @@ include these compact labeled sections, even when the user is in a hurry:
 Keep original notes separate from the synthesis and provide their actual location
 when saved. Never claim a saved file or attachment exists without verifying it.
 For a narrow follow-up question, return only the relevant answer. A request for
-an updated brief still needs all six sections, with one concise line per section
+partner pre-call preparation, a needs-you feed, delegation, precedent recall or
+time reconstruction uses the current hosted-partner-workflows-v1 format while
+retaining these evidence and authorization rules. Other requests for
+an updated brief still need all six sections, with one concise line per section
 when time is short. Deliver that usable brief inline before saving files or
 creating attachments. Do not delay a notes-based brief for optional retrieval,
 and do not substitute a promise to work for the provisional decision content.

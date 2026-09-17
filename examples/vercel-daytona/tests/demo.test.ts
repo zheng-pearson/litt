@@ -21,6 +21,7 @@ import { createHmac } from "node:crypto";
 import { verifyMiniIdentity } from "../src/mini.js";
 import { waPayload, waSignature } from "../src/whatsapp.js";
 import { connectionToken, installConnectionSkill } from "../src/connections.js";
+import { partnerHarness } from "./partner-workflows-fixture.js";
 import { reconcileTelegramBot } from "../src/telegram-cutover.js";
 
 const pg = new PGlite();
@@ -268,7 +269,7 @@ describe("conversational Outlook connection capability", () => {
     expect(file.content).toContain("never relabel UTC as local time");
     expect(file.content).not.toContain(connectionToken(config, tenant.id));
     const legalFile = JSON.parse(String(calls.filter((call) => call.path === "/v1/workspace/write")[1]!.options?.body));
-    expect(legalFile.content).toContain("updated brief still needs all six sections");
+    expect(legalFile.content).toContain("updated brief still need all six sections");
     expect(legalFile.content).toContain("inline before saving files");
     const routingFile = JSON.parse(String(calls.filter((call) => call.path === "/v1/workspace/write")[2]!.options?.body));
     expect(routingFile.path).toBe("skills/hosted-connections-policy-v2/SKILL.md");
@@ -1573,6 +1574,51 @@ describe("Daytona adapter", () => {
     expect(paths.filter((p) => p === "/v1/credentials/set")).toHaveLength(2);
     expect(paths.filter((p) => p === "/webhooks/telegram")).toHaveLength(2);
   });
+  test("Telegram installs partner workflows before forwarding and caches successful setup", async () => {
+    const t = await ready();
+    const box = sandbox();
+    const hosted = partnerHarness();
+    const client = { get: async () => box.fake } as unknown as Pick<Daytona, "get" | "create">;
+    let messages = 0;
+    const adapter = new DaytonaRuntime(config, store, client, async (url, options) => {
+      const parsed = new URL(String(url));
+      const path = parsed.pathname + parsed.search;
+      if (path === "/v1/credentials/set") { return new Response(null, { status: 503 }); }
+      if (path === "/webhooks/telegram") {
+        expect(hosted.state(t.id).files.has("skills/hosted-partner-workflows-v1/scripts/time-entries.ts")).toBe(true);
+        expect(hosted.state(t.id).heartbeat).toContain("Partner workflow review");
+        messages++;
+        return Response.json({ ok: true });
+      }
+      return hosted.runtime.request(t, path, options);
+    });
+    await adapter.request(t, "/webhooks/telegram");
+    const installedCalls = hosted.calls.length;
+    await adapter.request(t, "/webhooks/telegram");
+    expect(messages).toBe(2);
+    expect(hosted.calls.length).toBe(installedCalls);
+  });
+  test("Telegram retries a failed partner installation without dropping either message", async () => {
+    const t = await ready();
+    const box = sandbox();
+    const hosted = partnerHarness();
+    hosted.fail("/v1/memory/v3/rebuild-index");
+    const client = { get: async () => box.fake } as unknown as Pick<Daytona, "get" | "create">;
+    let messages = 0;
+    const adapter = new DaytonaRuntime(config, store, client, async (url, options) => {
+      const parsed = new URL(String(url));
+      const path = parsed.pathname + parsed.search;
+      if (path === "/v1/credentials/set") { return new Response(null, { status: 503 }); }
+      if (path === "/webhooks/telegram") { messages++; return Response.json({ ok: true }); }
+      return hosted.runtime.request(t, path, options);
+    });
+    await adapter.request(t, "/webhooks/telegram");
+    hosted.fail();
+    await adapter.request(t, "/webhooks/telegram");
+    expect(messages).toBe(2);
+    const manifest = hosted.state(t.id).files.get("skills/hosted-partner-workflows-v1/installation.json");
+    expect(JSON.parse(manifest!).fingerprint).toBeString();
+  });
   test("operator opt-in applies interactive auto-approval once before chat without changing background policy", async () => {
     config.HOSTED_INTERACTIVE_AUTO_APPROVE = "true";
     const t = await ready();
@@ -1593,6 +1639,7 @@ describe("Daytona adapter", () => {
           body: options?.body ? JSON.parse(String(options.body)) : null,
           auth: new Headers(options?.headers).get("authorization"),
         });
+        if (path === "/v1/skills/hosted-partner-workflows-v1") { return new Response(null, { status: 503 }); }
         return Response.json({
           interactive: "high",
           autonomous: "low",
@@ -1616,6 +1663,7 @@ describe("Daytona adapter", () => {
       "/v1/workspace/write",
       "/v1/memory/v2/reembed-skills",
       "/v1/memory/v3/rebuild-index",
+      "/v1/skills/hosted-partner-workflows-v1",
       "/webhooks/telegram",
       "/webhooks/whatsapp",
     ]);
@@ -1638,6 +1686,7 @@ describe("Daytona adapter", () => {
       if (path === "/v1/permissions/thresholds" && failures-- > 0) {
         return Response.json({ error: "unavailable" }, { status: 400 });
       }
+      if (path === "/v1/skills/hosted-partner-workflows-v1") { return new Response(null, { status: 503 }); }
       return Response.json({ interactive: "high" });
     });
     await expect(adapter.request(t, "/webhooks/telegram")).rejects.toThrow(
@@ -1660,6 +1709,7 @@ describe("Daytona adapter", () => {
       "/v1/workspace/write",
       "/v1/memory/v2/reembed-skills",
       "/v1/memory/v3/rebuild-index",
+      "/v1/skills/hosted-partner-workflows-v1",
       "/webhooks/telegram",
     ]);
   });

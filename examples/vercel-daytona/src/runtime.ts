@@ -4,6 +4,7 @@ import type { Config } from "./config.js";
 import { digest, randomToken } from "./security.js";
 import type { Store, Tenant } from "./store.js";
 import { installConnectionSkill } from "./connections.js";
+import { installPartnerWorkflows } from "./partner-workflows.js";
 
 export interface Runtime {
   provision(tenant: Tenant): Promise<void>;
@@ -56,6 +57,7 @@ for (const [path, before, after] of [
 
 export class DaytonaRuntime implements Runtime {
   private connectionSkills = new Map<string, Promise<void>>();
+  private partnerWorkflows = new Map<string, Promise<void>>();
   private interactivePolicies = new Map<string, Promise<void>>();
   private introSetups = new Map<string, Promise<void>>();
   private daytona: Pick<Daytona, "get" | "create">;
@@ -295,6 +297,19 @@ export class DaytonaRuntime implements Runtime {
         console.warn(
           "Hosted connection skill setup failed; retrying on the next message",
         );
+      }
+    }
+    if (path === "/webhooks/telegram") {
+      let setup = this.partnerWorkflows.get(tenant.id);
+      if (!setup) {
+        setup = installPartnerWorkflows(tenant, this);
+        this.partnerWorkflows.set(tenant.id, setup);
+      }
+      try {
+        await setup;
+      } catch {
+        this.partnerWorkflows.delete(tenant.id);
+        console.warn("Partner workflow setup failed; retrying on the next message");
       }
     }
     const sandbox = await this.sandbox(tenant);
