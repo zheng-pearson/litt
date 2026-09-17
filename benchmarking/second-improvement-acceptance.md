@@ -11,6 +11,21 @@ their original observations; later entries supersede earlier deployment status.
 Acceptance summary: 1 of 9 verified, 8 partial. Implementation or deployment
 alone does not close an item.
 
+### Gmail live retest, September 17, 14:18-14:20 Pacific
+
+The user explicitly approved temporary Gmail disconnect/reconnect. Second
+confirmed Gmail disconnected and Outlook/Pearson unchanged. The exact question
+"Have you connected Gmail?" at 14:19:43 received a progress preview observed
+7.6 seconds later, then only "No. Gmail is currently disconnected." The final
+reply contained no link. Requirement 3 therefore still fails in the live chat;
+installed skill instructions are not sufficient evidence of the behavior.
+
+An explicit reconnect request at 14:20:15 produced a secure Gmail link and
+promised an automatic read-only Inbox check after consent. The browser reached
+Google's account chooser with Gmail read-only scope. User consent is pending;
+Gmail remains disconnected until that succeeds. No email/draft/calendar write
+was requested. Receipt and resumption acceptance remain unproven for this flow.
+
 Isolated recovery regression coverage verifies that overlapping workers cannot
 send the same unexpired leased receipt twice, and a rejected send retains its
 encrypted queued payload without logging successful delivery. A subsequent

@@ -274,7 +274,6 @@ describe("conversational Outlook connection capability", () => {
     expect(routingFile.path).toBe("skills/hosted-connections-policy-v2/SKILL.md");
     expect(routingFile.content).toContain("always-candidate: true");
     expect(routingFile.content).toContain("read the current");
-    expect(routingFile.content).toContain("status-only");
     calls = [];
     upstream = () => Response.json({ ok: true });
     await installConnectionSkill(config, tenant, runtime);

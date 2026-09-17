@@ -45,7 +45,8 @@ context. It contains the secure link procedure, verification and task resumption
 instructions. Do not infer current access from earlier conversation claims.
 
 Providing an optional sign-in link does not connect an account or grant access.
-Respect an explicit status-only request or instruction not to offer setup.
+Use that workflow's explicit opt-out boundary; a plain status question is not
+an instruction to withhold its optional setup link.
 `,
 };
 
