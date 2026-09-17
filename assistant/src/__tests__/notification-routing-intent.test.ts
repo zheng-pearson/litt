@@ -262,6 +262,30 @@ describe("routing intent enforcement", () => {
       expect(enforced.selectedChannels).toEqual(["vellum"]);
       expect(enforced.reasoningSummary).toBe(decision.reasoningSummary);
     });
+
+    // Reproduces a scheduled reminder firing: `schedule.notify` emits with
+    // `urgency: "high"`, so step 2.5a in emit-signal prepends `vellum` before
+    // enforcement runs. The source channel is `scheduler`, which is not a
+    // deliverable channel, so the cap falls back to the first selected
+    // channel and lands on the internal inbox instead of the channel the
+    // reminder was created to reach.
+    test("scheduled reminder with a preferred channel is capped to that channel, not the urgency-prepended inbox", () => {
+      const decision = makeDecision({
+        selectedChannels: ["vellum", "telegram"],
+        reasoningSummary: "LLM selected telegram (vellum forced: high urgency)",
+      });
+      const connected: NotificationChannel[] = ["vellum", "telegram"];
+
+      const enforced = enforceRoutingIntent(
+        decision,
+        "single_channel",
+        connected,
+        "scheduler",
+        { preferred_channels: ["telegram"] },
+      );
+
+      expect(enforced.selectedChannels).toEqual(["telegram"]);
+    });
   });
 
   describe("undefined routing intent", () => {
