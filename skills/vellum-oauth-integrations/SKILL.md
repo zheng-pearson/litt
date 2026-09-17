@@ -1,6 +1,6 @@
 ---
 name: vellum-oauth-integrations
-description: Act on behalf of your user in any third-party software that supports OAuth 2.0
+description: Connect OAuth providers, inspect connected account emails or usernames, and act on behalf of the user in third-party software.
 compatibility: "Designed for Vellum personal assistants"
 metadata:
   emoji: "🔌"
@@ -34,6 +34,12 @@ You can also search for specific providers. Here's an example that searches for 
 ```bash
 assistant oauth providers list --provider-key google
 ```
+
+## Connected account identity
+
+For connection-status or account questions, run `assistant oauth status <provider-key> --json` and report the returned `connections[].account` email or username. List each connected account separately with its own status. Pin follow-up reads to the intended account; never fall back silently to another account. Stored identity describes the connection, but does not prove current service access.
+
+If the account field is absent, use the provider's documented current-user endpoint through that same connection. If identity cannot be verified, say it is unavailable. A service or bot account may expose an identifier instead of a personal email; label it accurately. Never infer identity from the chat user's email, a connection nickname, or token contents, and never expose credentials.
 
 ## Managed vs Your-Own Mode
 
