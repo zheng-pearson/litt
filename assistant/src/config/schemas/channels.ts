@@ -56,6 +56,17 @@ export const WhatsAppConfigSchema = z
 
 export const TelegramConfigSchema = z
   .object({
+    hostedConnectionEndpoint: z
+      .url()
+      .startsWith("https://")
+      .optional()
+      .describe("Trusted hosted connection-link endpoint"),
+    concurrentReplies: z
+      .boolean()
+      .default(false)
+      .describe(
+        "Answer new private messages separately while requested work continues",
+      ),
     botId: z
       .string({ error: "telegram.botId must be a string" })
       .default("")

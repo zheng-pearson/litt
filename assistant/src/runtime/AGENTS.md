@@ -304,3 +304,7 @@ The provider-level rate limiter (`providers/ratelimit.ts`) also logs warnings (m
 HTTP is the sole transport for browser and desktop clients; the CLI and the gateway reach the daemon over the IPC socket (see `assistant/AGENTS.md`). The runtime HTTP server (`assistant/src/runtime/http-server.ts`) is the canonical API surface. Clients connect via HTTP for request/response operations and SSE (`GET /v1/events`) for streaming server-to-client events.
 
 A skill never calls the runtime HTTP API directly: every request from a skill targets the gateway, and `gateway-only-guard.test.ts` fails CI on a runtime-port URL in a skill. For configuration reads, use the CLI (`assistant config get`); for control-plane writes with no CLI verb, use `$INTERNAL_GATEWAY_BASE_URL`. See "Gateway-Only API Consumption" in `gateway/AGENTS.md` for the rule and its exceptions.
+
+## Concurrent Telegram replies
+
+The opt-in `telegram.concurrentReplies` path records routing state in the inbound event payload. Preserve that state across retries, keep task targets scoped to their root conversation, and apply cancellation only after its acknowledgement is delivered. Immediate retrieval acknowledgements describe the next step without duration estimates.

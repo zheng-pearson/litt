@@ -47,6 +47,13 @@ import type {
   MessageProcessor,
   SlackInboundMessageMetadata,
 } from "./http-types.js";
+import { processChannelMessageInBackground } from "./routes/inbound-stages/background-dispatch.js";
+import { waitForFrontDoorResponses } from "./routes/inbound-stages/channel-front-door.js";
+import {
+  claimFrontDoorRetry,
+  completeFrontDoorTask,
+  readFrontDoorState,
+} from "./routes/inbound-stages/channel-front-door-store.js";
 import { prepareChannelInboundContent } from "./routes/inbound-stages/inbound-content-prep.js";
 import { resolveRoutingStateFromRuntime } from "./trust-context-resolver.js";
 
@@ -521,6 +528,27 @@ export async function sweepFailedEvents(
         senderDisplayName: storedSenderName ?? storedSenderUsername,
         actorExternalId: trustContext.requesterExternalUserId,
       });
+    if (sourceChannel === "telegram" && readFrontDoorState(event.id)) {
+      claimFrontDoorRetry(event.id);
+      processChannelMessageInBackground({
+        processMessage,
+        eventId: event.id,
+        conversationId: event.conversationId,
+        content,
+        attachmentIds,
+        sourceChannel,
+        sourceInterface,
+        externalChatId: externalChatId ?? "",
+        replyCallbackUrl,
+        assistantId,
+        trustCtx: trustContext,
+        metadataHints,
+        metadataUxBrief,
+        chatType: metadataChatType,
+        channelInbound: replayChannelInbound,
+      });
+      continue;
+    }
     // The captured `slackInbound` carries the sender's Slack `app_context`, so
     // the replayed turn is prepared with the same context block the live turn
     // rendered. Payloads predating the capture simply have none.
@@ -668,6 +696,13 @@ export async function sweepFailedEvents(
   }
 
   for (const event of deliveryEvents) {
+    await waitForFrontDoorResponses(event.id);
+    if (readFrontDoorState(event.id)?.suppressed) {
+      markDeliveryDelivered(event.id);
+      completeFrontDoorTask(event.id);
+      continue;
+    }
+
     if (!event.rawPayload) {
       recordDeliveryFailure(
         event.id,

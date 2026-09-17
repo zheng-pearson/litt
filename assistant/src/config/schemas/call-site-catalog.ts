@@ -39,6 +39,13 @@ type CatalogRecord = {
 
 const CATALOG_RECORD: CatalogRecord = {
   // agentLoop
+  channelFrontDoor: {
+    id: "channelFrontDoor",
+    displayName: "Channel quick response",
+    description:
+      "Answers new messages while requested channel work continues separately.",
+    domain: "agentLoop",
+  },
   mainAgent: {
     id: "mainAgent",
     displayName: "Main Agent",

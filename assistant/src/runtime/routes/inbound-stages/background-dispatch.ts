@@ -38,6 +38,7 @@ import {
   isDeduplicatedDeliveryOwnedBySibling,
   markDeliveryDelivered,
   markProcessed,
+  markRetryableFailure,
   recordProcessingFailure,
 } from "../../../persistence/delivery-status.js";
 import { resolveGuardianName } from "../../../prompts/user-reference.js";
@@ -60,6 +61,18 @@ import { isContactTrustClass } from "../../trust-class.js";
 import { resolveRoutingState } from "../../trust-context-resolver.js";
 import { finalizeEventDelivery } from "../channel-delivery-routes.js";
 import { deliverGeneratedApprovalPrompt } from "../guardian-approval-prompt.js";
+import {
+  frontDoorFallback,
+  recordFrontDoorCompletion,
+  runFrontDoor,
+  shouldUseFrontDoor,
+  waitForFrontDoorResponses,
+} from "./channel-front-door.js";
+import {
+  completeFrontDoorTask,
+  isFrontDoorSuppressed,
+  readFrontDoorState,
+} from "./channel-front-door-store.js";
 import { withChannelTurnAdmission } from "./channel-turn-admission.js";
 
 const log = getLogger("runtime-http");
@@ -84,6 +97,7 @@ export function isBoundGuardianActor(params: {
 // ---------------------------------------------------------------------------
 
 export interface BackgroundProcessingParams {
+  frontDoorTask?: boolean;
   processMessage: MessageProcessor;
   conversationId: string;
   eventId: string;
@@ -149,6 +163,40 @@ export interface BackgroundProcessingParams {
 export function processChannelMessageInBackground(
   params: BackgroundProcessingParams,
 ): void {
+  if (
+    !(
+      params.sourceChannel === "telegram" && readFrontDoorState(params.eventId)
+    ) &&
+    !shouldUseFrontDoor(params)
+  ) {
+    processAdmittedChannelMessage(params);
+    return;
+  }
+  void runFrontDoor(params)
+    .then((work) => {
+      if (work) {
+        processAdmittedChannelMessage({ ...work, frontDoorTask: true });
+      }
+    })
+    .catch((err) => {
+      log.warn(
+        { err, eventId: params.eventId },
+        "Concurrent reply unavailable; preserving normal channel processing",
+      );
+      if (readFrontDoorState(params.eventId)) {
+        markRetryableFailure(
+          params.eventId,
+          "Concurrent reply delivery or routing failed",
+        );
+      } else {
+        processAdmittedChannelMessage(frontDoorFallback(params));
+      }
+    });
+}
+
+function processAdmittedChannelMessage(
+  params: BackgroundProcessingParams,
+): void {
   const {
     processMessage,
     conversationId,
@@ -200,6 +248,17 @@ export function processChannelMessageInBackground(
   // `channel-turn-admission.ts` for why channel turns defer rather than route
   // through the SSE-oriented conversation queue.
   void withChannelTurnAdmission(conversationId, async () => {
+    const suppressed = () =>
+      params.frontDoorTask === true && isFrontDoorSuppressed(eventId);
+    const settleSuppressed = () => {
+      markProcessed(eventId);
+      markDeliveryDelivered(eventId);
+      completeFrontDoorTask(eventId);
+    };
+    if (suppressed()) {
+      settleSuppressed();
+      return;
+    }
     const channelActivity = startChannelActivity({
       replyCallbackUrl,
       conversationId,
@@ -261,6 +320,9 @@ export function processChannelMessageInBackground(
         onStreamOpen: (streamTs) => storeStreamedReplyTs(eventId, streamTs),
       });
       const observeAgentEvent = (msg: AssistantEvent): void => {
+        if (suppressed()) {
+          return;
+        }
         if (
           msg.type === "message_complete" &&
           (msg.source === undefined || msg.source === "main") &&
@@ -268,7 +330,9 @@ export function processChannelMessageInBackground(
         ) {
           replyMessageId = msg.messageId;
         }
-        replySession?.observeEvent(msg);
+        if (!params.frontDoorTask) {
+          replySession?.observeEvent(msg);
+        }
         channelActivity?.observeEvent(msg);
       };
 
@@ -313,6 +377,10 @@ export function processChannelMessageInBackground(
         }
         markProcessed(eventId);
       } catch (err) {
+        if (suppressed()) {
+          settleSuppressed();
+          return;
+        }
         // Stop any live Slack stream cleanly. Its `ts` is already durably
         // recorded via `onStreamOpen`, so the retry sweep can reconcile
         // against that message rather than posting a duplicate.
@@ -392,7 +460,12 @@ export function processChannelMessageInBackground(
         }
       }
 
-      if (priorDeduplicatedDeliveryOwned) {
+      if (params.frontDoorTask) {
+        await waitForFrontDoorResponses(eventId);
+      }
+      if (suppressed()) {
+        settleSuppressed();
+      } else if (priorDeduplicatedDeliveryOwned) {
         log.info(
           { conversationId, eventId },
           "Skipping channel reply delivery for deduplicated ingress event; a prior attempt owns delivery",
@@ -416,6 +489,9 @@ export function processChannelMessageInBackground(
               ? { priorStreamMessageTs: recoveredStreamMessageTs }
               : {}),
           });
+          if (params.frontDoorTask) {
+            await recordFrontDoorCompletion(eventId);
+          }
         } catch (err) {
           log.error(
             { err, conversationId },

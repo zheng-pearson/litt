@@ -547,6 +547,9 @@ subgraph "Text Q&A Session"
     GW_NORMALIZE --> GW_ROUTE
     GW_ROUTE --> GW_FORWARD
     GW_FORWARD -->|"HTTP + replyCallbackUrl"| HTTP_RT
+    HTTP_RT -->|"Opt-in private Telegram guardian messages"| CHANNEL_FRONT_DOOR["Immediate reply and task routing"]
+    CHANNEL_FRONT_DOOR -->|"Short acknowledgement, no ETA"| CHANNEL_TX
+    CHANNEL_FRONT_DOOR -->|"Separate task conversation"| PLAYBOOK_MGR
     HTTP_RT -->|"channels/inbound transport<br/>channelId + hints + uxBrief"| PLAYBOOK_MGR
 
     %% Channel outbound — direct Web API delivery (per-assistant lane)
@@ -1026,3 +1029,7 @@ graph LR
 ## Maintenance Rule
 
 When architecture changes, update the relevant domain architecture document(s) above and keep this index aligned.
+
+### Concurrent Telegram replies
+
+With `telegram.concurrentReplies` enabled, private guardian messages pass through `channel-front-door.ts` before task admission. A model-led decision sends a concise reply without time estimates, answers directly or starts a separate task, and preserves unrelated work. Revisions and cancellations target only recorded tasks in the same root conversation. Routing and delivery state is stored additively in the inbound event payload; retries reuse that state and suppress superseded task results. The default remains the existing serialized channel flow.
