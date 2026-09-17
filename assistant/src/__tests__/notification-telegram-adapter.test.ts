@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
+import { TelegramNonRetryableError } from "../messaging/providers/telegram-bot/api.js";
+
 const sendCalls: Array<{
   chatId: string;
   text: string;
@@ -12,6 +14,8 @@ const sendCalls: Array<{
 
 /** When true, sendTelegramReply throws if an approval argument is present. */
 let rejectRichDelivery = false;
+let uncertainRichDelivery = false;
+let sendAttempts = 0;
 
 const editCalls: Array<{
   chatId: string;
@@ -32,9 +36,17 @@ mock.module("../messaging/providers/telegram-bot/send.js", () => ({
     chatId: string,
     text: string,
     approval?: unknown,
+    options?: { beforeAttempt?: () => Promise<void> },
   ) => {
+    await options?.beforeAttempt?.();
+    sendAttempts++;
+    if (uncertainRichDelivery && approval) {
+      throw new Error("Telegram request timed out");
+    }
     if (rejectRichDelivery && approval) {
-      throw new Error("Telegram API error: buttons not supported");
+      throw new TelegramNonRetryableError(
+        "Telegram API error: buttons not supported",
+      );
     }
     sendCalls.push({
       chatId,
@@ -98,6 +110,8 @@ describe("TelegramAdapter", () => {
     sendCalls.length = 0;
     editCalls.length = 0;
     rejectRichDelivery = false;
+    uncertainRichDelivery = false;
+    sendAttempts = 0;
     editFailure = undefined;
   });
 
@@ -284,7 +298,42 @@ describe("TelegramAdapter", () => {
     expect(sendCalls[0]?.approval).toBeUndefined();
   });
 
-  test("falls back to plain text with instructions when rich delivery fails", async () => {
+  test("checks source evidence inside the Telegram send boundary", async () => {
+    let checks = 0;
+    const result = await new TelegramAdapter().send(
+      makePayload(),
+      makeDestination(),
+      undefined,
+      {
+        isStillCurrent: async () => {
+          checks++;
+          return false;
+        },
+      },
+    );
+    expect(checks).toBe(1);
+    expect(result.success).toBe(false);
+    expect(sendAttempts).toBe(0);
+  });
+
+  test("does not start a second send after uncertain rich delivery", async () => {
+    uncertainRichDelivery = true;
+    const result = await new TelegramAdapter().send(
+      makePayload({
+        approvalContext: {
+          requestId: "req-123",
+          actions: [{ id: "approve", label: "Approve" }],
+          plainTextFallback: "Reply approve",
+        },
+      }),
+      makeDestination(),
+    );
+    expect(result.success).toBe(false);
+    expect(sendAttempts).toBe(1);
+    expect(sendCalls).toHaveLength(0);
+  });
+
+  test("falls back to plain text with instructions when rich delivery is rejected", async () => {
     rejectRichDelivery = true;
 
     const adapter = new TelegramAdapter();

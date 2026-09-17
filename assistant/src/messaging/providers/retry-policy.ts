@@ -93,6 +93,8 @@ export interface RetryableCall<T> {
   maxDelayMs?: number;
   log: RetryLogger;
   doFetch: () => Promise<Response>;
+  /** Revalidate delivery immediately before each attempt. Rejection stops retries. */
+  beforeAttempt?: () => Promise<void>;
   /** Pull the provider's own explanation out of an error body, when it has one. */
   detailFrom?: (body: string) => string | undefined;
   /**
@@ -159,6 +161,8 @@ export async function retryableCall<T>(call: RetryableCall<T>): Promise<T> {
     }
 
     retryAfter = null;
+
+    await call.beforeAttempt?.();
 
     let response: Response;
     try {

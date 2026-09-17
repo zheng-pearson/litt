@@ -108,6 +108,29 @@ describe("retryableCall", () => {
     } as RetryableCall<T>;
   }
 
+  test("revalidates after backoff and stops without another fetch when evidence changes", async () => {
+    let checks = 0;
+    let sends = 0;
+    await expect(
+      retryableCall(
+        spec({
+          beforeAttempt: async () => {
+            checks++;
+            if (checks === 2) {
+              throw new Error("Evidence changed");
+            }
+          },
+          doFetch: async () => {
+            sends++;
+            return new Response("busy", { status: 503 });
+          },
+        }),
+      ),
+    ).rejects.toThrow("Evidence changed");
+    expect(checks).toBe(2);
+    expect(sends).toBe(1);
+  });
+
   test("returns the decoded body without retrying on success", async () => {
     let calls = 0;
     const result = await retryableCall<{ v: number }>(

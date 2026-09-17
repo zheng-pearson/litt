@@ -15,6 +15,19 @@ Producer → NotificationSignal → Source-Active Gate → Candidate Generation 
 
 A producer calls `emitNotificationSignal()` with a free-form event name, attention hints (urgency, requiresAction, deadlineAt), and a context payload. The signal is persisted as a `notification_events` row.
 
+Producers with changeable evidence may supply `isStillCurrent`, an asynchronous
+source recheck after composition and deterministic checks, and immediately
+before each channel adapter send. False suppresses the stale event and releases
+its dedupe claim only when no channel has already accepted or is sending it;
+exceptions fail closed through the pipeline's retry-safe failure handling.
+Credential alerts recheck the exact provider account and failure state through
+the credential-health service. The Telegram adapter also forwards this in-process
+guard to every text chunk's API call. Each attempt rechecks after backoff and
+before fetching; stale evidence or recheck failure stops the retry loop. Other
+adapters need their own retry-time validation. This guard does not provide
+exactly-once delivery when a transport response is ambiguous, and partial
+multi-chunk delivery still requires reconciliation.
+
 Immediately after persistence, a **source-active pre-gate** runs (`checkSourceActiveSuppression`): when `visibleInSourceNow` is set, a hard signal-only invariant the decision engine cannot override, the signal is suppressed and short-circuits here, before candidate generation and the LLM decision. This keeps an always-suppressed signal (e.g. trusted-contact `verification_sent`) from spending an LLM inference whose result would be discarded. The `notification_events` row is still written for the audit trail.
 
 The hint is not a static `false` for every producer. A conversation-scoped producer derives it per signal through `resolveVisibleInSourceNow()` in `resolve-visible-in-source.ts`, so the same producer suppresses or notifies depending on what the user has on screen. The bar for deriving it rather than passing `false` is high; see [Choosing `visibleInSourceNow`](#choosing-visibleinsourcenow).

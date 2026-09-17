@@ -207,6 +207,56 @@ beforeEach(() => {
 
 // ── Tests ───────────────────────────────────────────────────────────────
 
+describe("NotificationBroadcaster current source evidence", () => {
+  test("suppresses a stale channel send and records no delivered post", async () => {
+    const { adapter, sends } = makeCapturingAdapter("telegram");
+    const broadcaster = new NotificationBroadcaster([adapter]);
+    const results = await broadcaster.broadcastDecision(
+      makeSignal(),
+      makeDecision({
+        selectedChannels: ["telegram"],
+        renderedCopy: {
+          telegram: { title: "Connection", body: "Access needs attention" },
+        },
+      }),
+      { isStillCurrent: async () => false },
+    );
+    expect(sends).toHaveLength(0);
+    expect(recordedPosts).toHaveLength(0);
+    expect(results[0]?.status).toBe("skipped");
+  });
+
+  test("rechecks evidence after an earlier channel delivers", async () => {
+    let current = true;
+    const first = makeCapturingAdapter("vellum");
+    const second = makeCapturingAdapter("telegram");
+    const originalSend = first.adapter.send;
+    first.adapter.send = async (...args) => {
+      const result = await originalSend(...args);
+      current = false;
+      return result;
+    };
+    const broadcaster = new NotificationBroadcaster([
+      first.adapter,
+      second.adapter,
+    ]);
+    const results = await broadcaster.broadcastDecision(
+      makeSignal(),
+      makeDecision({
+        selectedChannels: ["vellum", "telegram"],
+        renderedCopy: {
+          vellum: { title: "Connection", body: "Access needs attention" },
+          telegram: { title: "Connection", body: "Access needs attention" },
+        },
+      }),
+      { isStillCurrent: async () => current },
+    );
+    expect(first.sends).toHaveLength(1);
+    expect(second.sends).toHaveLength(0);
+    expect(results.map((result) => result.status)).toEqual(["sent", "skipped"]);
+  });
+});
+
 describe("NotificationBroadcaster last-resort copy resolution", () => {
   test(
     "skips channel and does not leak raw event name when both decision " +

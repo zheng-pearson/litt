@@ -221,6 +221,11 @@ let mockCredentialHealthReport: CredentialHealthReport | null = null;
 let mockCheckAllCredentialsFail = false;
 
 mock.module("../credential-health/credential-health-service.js", () => ({
+  checkCredentialForProvider: async (provider: string, connectionId: string) =>
+    mockCredentialHealthReport?.results.find(
+      (result) =>
+        result.provider === provider && result.connectionId === connectionId,
+    ) ?? null,
   checkAllCredentials: async () => {
     if (mockCheckAllCredentialsFail) {
       throw new Error("CES unreachable");
@@ -240,6 +245,7 @@ mock.module("../credential-health/credential-health-service.js", () => ({
 // `notifyUnhealthyCredentials` dynamically imports `emitNotificationSignal`.
 // Track calls so tests can assert which credentials were notified about.
 const emittedNotificationSignals: Array<{
+  isStillCurrent?: () => Promise<boolean>;
   sourceEventName?: string;
   sourceChannel?: string;
   sourceContextId: string;
@@ -252,6 +258,7 @@ const emittedNotificationSignals: Array<{
 
 mock.module("../notifications/emit-signal.js", () => ({
   emitNotificationSignal: async (opts: {
+    isStillCurrent?: () => Promise<boolean>;
     sourceEventName?: string;
     sourceChannel?: string;
     sourceContextId: string;
@@ -262,6 +269,7 @@ mock.module("../notifications/emit-signal.js", () => ({
     conversationMetadata?: Record<string, unknown>;
   }) => {
     emittedNotificationSignals.push({
+      isStillCurrent: opts.isStillCurrent,
       sourceEventName: opts.sourceEventName,
       sourceChannel: opts.sourceChannel,
       sourceContextId: opts.sourceContextId,
@@ -1080,6 +1088,30 @@ describe("HeartbeatService", () => {
 
       // No notification signals should have been emitted for unreachable
       expect(emittedNotificationSignals).toHaveLength(0);
+    });
+
+    test("credential alert revalidation suppresses recovery and removed accounts", async () => {
+      const failure = makeUnhealthyResult({
+        provider: "outlook",
+        status: "revoked",
+      });
+      mockCredentialHealthReport = {
+        checkedAt: Date.now(),
+        results: [failure],
+        unhealthy: [failure],
+      };
+      await createService().runOnce();
+      const signal = emittedNotificationSignals.find(
+        (item) => item.sourceEventName === "credential.health_alert",
+      );
+      expect(signal?.isStillCurrent).toBeDefined();
+      expect(await signal!.isStillCurrent!()).toBe(true);
+      mockCredentialHealthReport.results = [{ ...failure, status: "healthy" }];
+      expect(await signal!.isStillCurrent!()).toBe(false);
+      mockCredentialHealthReport.results = [
+        { ...failure, connectionId: "different-account" },
+      ];
+      expect(await signal!.isStillCurrent!()).toBe(false);
     });
 
     test("unreachable credentials do not block provider tools in heartbeat prompt", async () => {

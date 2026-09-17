@@ -256,6 +256,8 @@ export type OnConversationCreatedFn = (
 ) => void | Promise<void>;
 export interface BroadcastDecisionOptions {
   onConversationCreated?: OnConversationCreatedFn;
+  /** Revalidate producer evidence immediately before each adapter send. */
+  isStillCurrent?: () => Promise<boolean>;
   /** Deadline override for tests; defaults to PLATFORM_OUTCOME_DEADLINE_MS. */
   platformOutcomeDeadlineMs?: number;
   /**
@@ -278,6 +280,7 @@ const PLATFORM_OUTCOME_DEADLINE_MS = 2_500;
  * platform dispatch outcome is known.
  */
 interface PendingChannelDispatch {
+  isStillCurrent?: () => Promise<boolean>;
   adapter: ChannelAdapter;
   channel: NotificationChannel;
   destination: ChannelDestination;
@@ -702,6 +705,7 @@ export class NotificationBroadcaster {
         };
 
         const dispatch: PendingChannelDispatch = {
+          isStillCurrent: options?.isStillCurrent,
           adapter,
           channel,
           destination,
@@ -896,7 +900,24 @@ export class NotificationBroadcaster {
       hasPersistedDecision,
     } = dispatch;
     try {
-      const adapterResult = await adapter.send(payload, destination, observer);
+      if (dispatch.isStillCurrent && !(await dispatch.isStillCurrent())) {
+        const reason = "Source evidence changed before channel delivery";
+        if (hasPersistedDecision) {
+          updateDeliveryStatus(deliveryId, "skipped", { message: reason });
+        }
+        results.push(
+          buildDeliveryResult(dispatch, "skipped", { errorMessage: reason }),
+        );
+        return null;
+      }
+      const adapterResult = await adapter.send(
+        payload,
+        destination,
+        observer,
+        dispatch.isStillCurrent
+          ? { isStillCurrent: dispatch.isStillCurrent }
+          : undefined,
+      );
 
       if (adapterResult.success) {
         // Prefer the channel-native id the adapter just captured (e.g.

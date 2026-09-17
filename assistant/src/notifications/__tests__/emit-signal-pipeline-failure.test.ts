@@ -84,12 +84,13 @@ await initializeDb();
 
 const { emitNotificationSignal } = await import("../emit-signal.js");
 
-function emit() {
+function emit(isStillCurrent?: () => Promise<boolean>) {
   const params: EmitSignalParams<string> = {
     sourceEventName: "schedule.definition_error",
     sourceChannel: "scheduler",
     sourceContextId: "plugin:news/digest",
     dedupeKey: DEDUPE_KEY,
+    isStillCurrent,
     contextPayload: { pluginName: "news", scheduleName: "digest" },
     attentionHints: {
       requiresAction: false,
@@ -131,6 +132,94 @@ beforeEach(() => {
 });
 
 describe("emitNotificationSignal dedupe claim on failure", () => {
+  test("stale evidence at the adapter boundary releases an undelivered claim", async () => {
+    let checks = 0;
+    dispatchDecisionMock.mockImplementationOnce(
+      async (_signal, _decision, _broadcaster, options) => {
+        expect(await options.isStillCurrent()).toBe(false);
+        return {
+          dispatched: true,
+          reason: "skipped",
+          deliveryResults: [
+            { channel: "vellum", destination: "vellum", status: "skipped" },
+          ],
+        };
+      },
+    );
+    const result = await emit(async () => ++checks === 1);
+    expect(result.dispatched).toBe(false);
+    expect(result.pipelineFailed).toBe(false);
+    expect((await emit()).deduplicated).toBe(false);
+  });
+
+  test("adapter-boundary recheck failures fail closed and permit a fresh attempt", async () => {
+    let checks = 0;
+    dispatchDecisionMock.mockImplementationOnce(
+      async (_signal, _decision, _broadcaster, options) => {
+        await expect(options.isStillCurrent()).rejects.toThrow(
+          "health unavailable",
+        );
+        return {
+          dispatched: true,
+          reason: "failed",
+          deliveryResults: [
+            { channel: "vellum", destination: "vellum", status: "failed" },
+          ],
+        };
+      },
+    );
+    const result = await emit(async () => {
+      if (++checks > 1) {
+        throw new Error("health unavailable");
+      }
+      return true;
+    });
+    expect(result.dispatched).toBe(false);
+    expect(result.pipelineFailed).toBe(true);
+    expect((await emit()).deduplicated).toBe(false);
+  });
+
+  test("recovered source evidence suppresses dispatch without claiming a future alert", async () => {
+    const stale = await emit(async () => false);
+    expect(stale.dispatched).toBe(false);
+    expect(stale.reason).toBe("Source evidence changed before dispatch");
+    expect(dispatchDecisionMock).not.toHaveBeenCalled();
+    const fresh = await emit(async () => true);
+    expect(fresh.dispatched).toBe(true);
+    expect(fresh.deduplicated).toBe(false);
+  });
+
+  test("changed evidence after a delivered channel retains the duplicate guard", async () => {
+    let checks = 0;
+    dispatchDecisionMock.mockImplementationOnce(
+      async (_signal, _decision, _broadcaster, options) => {
+        expect(await options.isStillCurrent()).toBe(false);
+        expect(await options.isStillCurrent()).toBe(false);
+        return {
+          dispatched: true,
+          reason: "partial",
+          deliveryResults: [
+            { channel: "vellum", destination: "vellum", status: "sent" },
+            { channel: "telegram", destination: "chat-1", status: "skipped" },
+          ],
+        };
+      },
+    );
+    const result = await emit(async () => ++checks !== 2);
+    expect(result.dispatched).toBe(true);
+    expect(checks).toBe(2);
+    expect((await emit()).deduplicated).toBe(true);
+  });
+
+  test("failed source revalidation fails closed and permits retry", async () => {
+    const failed = await emit(async () => {
+      throw new Error("health unavailable");
+    });
+    expect(failed.pipelineFailed).toBe(true);
+    expect(dispatchDecisionMock).not.toHaveBeenCalled();
+    expect((await emit(async () => true)).dispatched).toBe(true);
+  });
+
   test("a retry after a mid-pipeline failure dispatches", async () => {
     dispatchDecisionMock.mockRejectedValueOnce(new Error("transient outage"));
 

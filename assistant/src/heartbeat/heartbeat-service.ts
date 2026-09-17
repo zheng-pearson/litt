@@ -786,6 +786,19 @@ export class HeartbeatService {
           sourceChannel: "watcher",
           sourceContextId: result.connectionId,
           dedupeKey: `credential-health:${result.connectionId}:${result.status}`,
+          isStillCurrent: async () => {
+            const { checkCredentialForProvider } =
+              await import("../credential-health/credential-health-service.js");
+            const current = await checkCredentialForProvider(
+              result.provider,
+              result.connectionId,
+            );
+            return (
+              current?.status === result.status &&
+              JSON.stringify([...current.missingScopes].sort()) ===
+                JSON.stringify([...result.missingScopes].sort())
+            );
+          },
           attentionHints: {
             requiresAction: true,
             urgency,

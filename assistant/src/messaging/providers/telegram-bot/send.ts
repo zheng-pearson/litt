@@ -52,6 +52,7 @@ const TELEGRAM_IMAGE_MIME_PREFIXES = [
  */
 export interface TelegramSendOptions {
   messageThreadId?: string;
+  beforeAttempt?: () => Promise<void>;
 }
 
 /**
@@ -210,11 +211,21 @@ export async function sendTelegramReply(
       payload.reply_markup = buildInlineKeyboard(approval);
     }
 
-    const sent = await callTelegramBotApi<TelegramMessage>(
-      "sendMessage",
-      payload,
-    );
-    ids.push(sentMessageId(sent));
+    try {
+      const sent = await callTelegramBotApi<TelegramMessage>(
+        "sendMessage",
+        payload,
+        opts?.beforeAttempt,
+      );
+      ids.push(sentMessageId(sent));
+    } catch (error) {
+      if (ids.length > 0) {
+        throw new Error("Telegram reply was partially delivered", {
+          cause: error,
+        });
+      }
+      throw error;
+    }
   }
 
   log.debug({ chatId, chunks: chunks.length }, "Telegram reply sent");

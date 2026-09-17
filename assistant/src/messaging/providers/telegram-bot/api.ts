@@ -86,6 +86,7 @@ function parseTelegramBody<T>(
 function telegramCall<T>(
   method: string,
   doFetch: () => Promise<Response>,
+  beforeAttempt?: () => Promise<void>,
 ): Promise<T> {
   return retryableCall<T>({
     provider: "Telegram",
@@ -94,6 +95,7 @@ function telegramCall<T>(
     initialBackoffMs: TELEGRAM_DEFAULT_INITIAL_BACKOFF_MS,
     log,
     doFetch,
+    beforeAttempt,
     // Telegram errors can echo the bot token, which is in the request URL.
     redact: redactBotTokens,
     detailFrom: (body) => parseTelegramBody<T>(body)?.description,
@@ -165,15 +167,19 @@ export interface TelegramMessage {
 export async function callTelegramBotApi<T>(
   method: string,
   body: Record<string, unknown>,
+  beforeAttempt?: () => Promise<void>,
 ): Promise<T> {
   const botToken = await resolveBotToken();
-  return telegramCall<T>(method, () =>
-    fetch(`${TELEGRAM_API_BASE}/bot${botToken}/${method}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(TELEGRAM_DEFAULT_TIMEOUT_MS),
-    }),
+  return telegramCall<T>(
+    method,
+    () =>
+      fetch(`${TELEGRAM_API_BASE}/bot${botToken}/${method}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(TELEGRAM_DEFAULT_TIMEOUT_MS),
+      }),
+    beforeAttempt,
   );
 }
 

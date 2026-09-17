@@ -16,8 +16,14 @@ const callTelegramBotApiMock = mock<CallTelegramBotApi>(
 );
 
 mock.module("./api.js", () => ({
-  callTelegramBotApi: (method: string, body: Record<string, unknown>) =>
-    callTelegramBotApiMock(method, body),
+  callTelegramBotApi: (
+    method: string,
+    body: Record<string, unknown>,
+    beforeAttempt?: () => Promise<void>,
+  ) =>
+    beforeAttempt
+      ? callTelegramBotApiMock(method, body, beforeAttempt)
+      : callTelegramBotApiMock(method, body),
   callTelegramBotApiMultipart: async () => ({}),
   TelegramNonRetryableError: class TelegramNonRetryableError extends Error {
     readonly description: string | undefined;
@@ -64,6 +70,34 @@ beforeEach(() => {
 });
 
 describe("sendTelegramRichReply", () => {
+  test("passes the evidence guard to every chunk's API call", async () => {
+    const beforeAttempt = async () => {};
+    await sendTelegramReply("123", "x".repeat(4100), undefined, {
+      beforeAttempt,
+    });
+    expect(callsTo("sendMessage")).toHaveLength(2);
+    for (const call of callsTo("sendMessage")) {
+      expect(call[2]).toBe(beforeAttempt);
+    }
+  });
+
+  test("a rejected later plain-text chunk is not a safe whole-message fallback", async () => {
+    callTelegramBotApiMock.mockResolvedValueOnce({ message_id: 1 } as never);
+    callTelegramBotApiMock.mockRejectedValueOnce(
+      new TelegramNonRetryableError("Rejected buttons"),
+    );
+    let failure: unknown;
+    try {
+      await sendTelegramReply("123", "x".repeat(4100), approval);
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(TelegramNonRetryableError);
+    expect((failure as Error).cause).toBeInstanceOf(TelegramNonRetryableError);
+    expect(callsTo("sendMessage")).toHaveLength(2);
+  });
+
   test("renders markdown to HTML and sends it via the nested rich_message object", async () => {
     await sendTelegramRichReply("123", "# Heading\n\n| a | b |\n| - | - |");
 

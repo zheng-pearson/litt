@@ -202,6 +202,8 @@ export interface EmitSignalParams<TEventName extends string = string> {
   conversationAffinityHint?: Partial<Record<string, string>>;
   /** Optional deduplication key. */
   dedupeKey?: string;
+  /** Revalidate source evidence after composition and before each channel send. */
+  isStillCurrent?: () => Promise<boolean>;
   /**
    * Optional callback invoked immediately when the broadcaster pairs a vellum
    * conversation and emits `notification_conversation_created`.
@@ -521,12 +523,26 @@ export async function emitNotificationSignal<TEventName extends string>(
       }
     }
 
+    if (params.isStillCurrent && !(await params.isStillCurrent())) {
+      setEventDedupeKey(signalId, null);
+      return {
+        signalId,
+        deduplicated: false,
+        dispatched: false,
+        reason: "Source evidence changed before dispatch",
+        deliveryResults: [],
+        pipelineFailed: false,
+      };
+    }
+
     // Step 4: Dispatch through the broadcaster
     // Note: notification_conversation_created events are emitted eagerly inside
     // the broadcaster as soon as vellum conversation pairing succeeds, rather
     // than after all channel deliveries complete. This avoids a race where
     // slow Telegram delivery delays the push past the macOS deep-link retry.
     const broadcaster = getBroadcaster();
+    let deliveryEvidenceChanged = false;
+    let deliveryEvidenceFailed = false;
     const dispatchResult = await dispatchDecision(
       signal,
       decision,
@@ -534,8 +550,40 @@ export async function emitNotificationSignal<TEventName extends string>(
       {
         onConversationCreated: params.onConversationCreated,
         resultsSink: channelResults,
+        isStillCurrent: params.isStillCurrent
+          ? async () => {
+              if (deliveryEvidenceChanged || deliveryEvidenceFailed) {
+                return false;
+              }
+              try {
+                const current = await params.isStillCurrent!();
+                deliveryEvidenceChanged ||= !current;
+                return current;
+              } catch (error) {
+                deliveryEvidenceFailed = true;
+                throw error;
+              }
+            }
+          : undefined,
       },
     );
+
+    if (deliveryEvidenceChanged || deliveryEvidenceFailed) {
+      const delivered = hasChannelSideEffect(dispatchResult.deliveryResults);
+      if (!delivered) {
+        setEventDedupeKey(signalId, null);
+      }
+      return {
+        signalId,
+        deduplicated: false,
+        dispatched: delivered,
+        reason: deliveryEvidenceFailed
+          ? "Source revalidation failed before channel delivery"
+          : "Source evidence changed before channel delivery",
+        deliveryResults: dispatchResult.deliveryResults,
+        pipelineFailed: deliveryEvidenceFailed,
+      };
+    }
 
     // Step 5: Mirror background-origin signals into the home activity feed.
     // The helper itself decides whether to write (background filter); we

@@ -4,10 +4,11 @@
  *
  * When the delivery payload carries an `approvalContext` (built centrally
  * by the broadcaster), inline keyboard buttons ("Approve once", "Reject")
- * are attached. If the rich delivery fails, the adapter falls back to
- * plain text with typed-command instructions.
+ * are attached. A confirmed rejection before any chunk is delivered permits
+ * plain text fallback with typed-command instructions.
  */
 
+import { TelegramNonRetryableError } from "../../messaging/providers/telegram-bot/api.js";
 import {
   editTelegramMessage,
   sendTelegramReply,
@@ -16,6 +17,7 @@ import { ConfigError } from "../../util/errors.js";
 import { getLogger } from "../../util/logger.js";
 import type {
   ChannelAdapter,
+  ChannelDeliveryObserver,
   ChannelDeliveryPayload,
   ChannelDestination,
   ChannelUpdateContext,
@@ -37,6 +39,8 @@ export class TelegramAdapter implements ChannelAdapter {
   async send(
     payload: ChannelDeliveryPayload,
     destination: ChannelDestination,
+    _observer?: ChannelDeliveryObserver,
+    deliveryGuard?: { isStillCurrent: () => Promise<boolean> },
   ): Promise<DeliveryResult> {
     const chatId = destination.endpoint;
     if (!chatId) {
@@ -52,13 +56,27 @@ export class TelegramAdapter implements ChannelAdapter {
 
     const messageText = resolveMessageText(payload);
     const approval = payload.approvalContext;
+    const options = deliveryGuard
+      ? {
+          beforeAttempt: async () => {
+            if (!(await deliveryGuard.isStillCurrent())) {
+              throw new Error(
+                "Source evidence changed before Telegram delivery",
+              );
+            }
+          },
+        }
+      : undefined;
 
     try {
       if (rendersActions(approval)) {
-        // Attempt rich delivery with inline keyboard buttons.
-        // On failure, fall back to plain text below.
         try {
-          const sent = await sendTelegramReply(chatId, messageText, approval);
+          const sent = await sendTelegramReply(
+            chatId,
+            messageText,
+            approval,
+            options,
+          );
 
           log.info(
             { sourceEventName: payload.sourceEventName, chatId },
@@ -69,9 +87,12 @@ export class TelegramAdapter implements ChannelAdapter {
           // (in-place withdrawal when the request resolves elsewhere).
           return { success: true, messageId: sent.lastMessageId };
         } catch (richErr) {
+          if (!(richErr instanceof TelegramNonRetryableError)) {
+            throw richErr;
+          }
           log.warn(
             { err: richErr, sourceEventName: payload.sourceEventName, chatId },
-            "Rich Telegram delivery failed — falling back to plain text",
+            "Telegram rejected inline buttons; falling back to plain text",
           );
         }
       }
@@ -81,6 +102,8 @@ export class TelegramAdapter implements ChannelAdapter {
       const sent = await sendTelegramReply(
         chatId,
         appendPlainTextFallback(messageText, approval),
+        undefined,
+        options,
       );
 
       log.info(

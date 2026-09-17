@@ -133,6 +133,7 @@ export interface ChannelAdapter {
     payload: ChannelDeliveryPayload,
     destination: ChannelDestination,
     observer?: ChannelDeliveryObserver,
+    deliveryGuard?: { isStillCurrent: () => Promise<boolean> },
   ): Promise<DeliveryResult>;
   update?(
     delivery: ChannelUpdateContext,
