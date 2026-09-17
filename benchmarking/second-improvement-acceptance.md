@@ -26,6 +26,26 @@ Google's account chooser with Gmail read-only scope. User consent is pending;
 Gmail remains disconnected until that succeeds. No email/draft/calendar write
 was requested. Receipt and resumption acceptance remain unproven for this flow.
 
+### Gmail routing regressions after rollout
+
+Deployment `dpl_Ap2yoQ5BHGx1ri8HvWbzrToqpbjD` promoted the narrowed setup
+opt-out wording from `9d71dcfa90`, preserving the Pearson identity instructions
+and partner-format exception. Only connections.ts and hosted-skills.ts changed
+against the SHA-verified live baseline. Its health check passed.
+
+The exact question at 14:25:54 still failed: Second answered from history,
+provided no link, and said completed research was running. Runtime diagnostics
+subsequently confirmed the message reached the assistant at 14:26:18 after
+gateway setup delay; the quick responder then chose a direct answer.
+
+After a routing repair was reported healthy at 14:30:26, the same question at
+14:30:49 produced a progress acknowledgement observed after 13.5 seconds. Its
+first substantive response, observed after 78.3 seconds without refreshing,
+contained a Google authorization link, but the callback was localhost and the
+scopes included modification, sending, Drive and contacts. This is a failed
+hosted-flow test, not successful proactive setup. The user was warned not to use
+that link. No consent was granted through it. Repair and retest remain required.
+
 Isolated recovery regression coverage verifies that overlapping workers cannot
 send the same unexpired leased receipt twice, and a rejected send retains its
 encrypted queued payload without logging successful delivery. A subsequent
