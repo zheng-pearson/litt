@@ -1,0 +1,26 @@
+{
+  "routes": [
+    {
+      "path": "messages",
+      "kind": "http",
+      "description": "Receive signed incoming SMS messages from Twilio",
+      "verification": {
+        "kind": "hmac",
+        "algorithm": "sha1",
+        "secret": { "field": "auth_token" },
+        "signature": { "header": "X-Twilio-Signature", "encoding": "base64" },
+        "payload": ["request-url", "form-params"]
+      },
+      "inbound": {
+        "identity": "phone",
+        "fields": {
+          "content": "Body",
+          "conversationExternalId": "From",
+          "actorExternalId": "From",
+          "externalMessageId": "MessageSid",
+          "chatType": { "from": "SmsStatus", "default": "sms" }
+        }
+      }
+    }
+  ]
+}

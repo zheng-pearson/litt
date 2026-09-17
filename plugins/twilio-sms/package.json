@@ -1,0 +1,10 @@
+{
+  "name": "twilio-sms",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "displayName": "Twilio SMS",
+  "description": "Text the assistant using a Twilio number.",
+  "icon": "message-square",
+  "peerDependencies": { "@vellumai/plugin-api": ">=0.12.1" }
+}
