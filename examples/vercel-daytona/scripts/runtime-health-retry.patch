@@ -1,0 +1,34 @@
+diff --git a/assistant/src/credential-health/credential-health-service.ts b/assistant/src/credential-health/credential-health-service.ts
+--- a/assistant/src/credential-health/credential-health-service.ts
++++ b/assistant/src/credential-health/credential-health-service.ts
+@@ -327,9 +327,17 @@ async function checkConnection(
+ 
+     if (hasRefreshToken) {
+       try {
+-        pingResult = await withValidToken(provider, runPing, { connectionId });
++        pingResult = await withValidToken(provider, async (validToken) => {
++          const result = await runPing(validToken);
++          if (result.authError) {
++            throw Object.assign(new Error("Credential ping rejected"), { status: 401 });
++          }
++          return result;
++        }, { connectionId });
+       } catch (err) {
+-        if (err instanceof TokenExpiredError) {
++        if (err instanceof Error && "status" in err && err.status === 401) {
++          pingResult = { ok: false, authError: true };
++        } else if (err instanceof TokenExpiredError) {
+           // Refresh itself failed (revoked refresh token, invalid_grant, etc.)
+           return {
+             ...base,
+@@ -337,8 +345,9 @@ async function checkConnection(
+             details: `${provider} token refresh failed. The refresh token may have been revoked. Re-authorization required.`,
+             canAutoRecover: false,
+           };
++        } else {
++          throw err;
+         }
+-        throw err;
+       }
+       authContext = "after_refresh";
+     } else {

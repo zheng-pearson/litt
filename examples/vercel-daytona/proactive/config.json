@@ -1,0 +1,14 @@
+{
+  "heartbeat": {
+    "enabled": true,
+    "intervalMs": 3600000,
+    "cronExpression": "0 * * * *",
+    "timezone": null,
+    "activeHoursStart": null,
+    "activeHoursEnd": null,
+    "maxConsecutiveRuns": null,
+    "maxDailyRuns": null,
+    "engagementPrompts": false,
+    "disposition": "Follow HEARTBEAT.md to assess the user's current workload and decide whether an urgency-based notification is warranted. Silence is a successful result when no item warrants interruption. Do not initiate unrelated projects or send a check-in merely because a heartbeat ran."
+  }
+}

@@ -34,6 +34,26 @@ This file is the cross-system architecture index. Detailed designs live in domai
 
 ## Cross-Cutting Invariants
 
+The optional [Vercel/Daytona demo control service](examples/vercel-daytona/README.md)
+routes a shared Telegram bot to private, per-user Vellum gateways. It owns the
+demo identity gate, a PostgreSQL delivery inbox, sandbox provisioning, and OAuth
+callback routing. Each sandbox keeps its own assistant state and credentials.
+The optional `/connect outlook` flow registers Microsoft credentials through the
+tenant gateway and uses the shared state-bound callback router. Microsoft tokens
+remain in the sandbox credential store; Google connections are independent.
+Conversational Outlook setup uses a managed skill and a tenant-bound credential
+that can only mint expiring connection links through `/integrations/connect`.
+The model chooses when to offer a link; the router validates identity and provider.
+WhatsApp ingress verifies Meta signatures and stores encrypted jobs in the same
+durable queue. Verified owner email selects the canonical assistant after
+same-channel confirmation; pending channel records become aliases to that owner.
+WhatsApp text messages reach the private sandbox gateway and replies use Meta's API.
+Its optional Telegram Mini App validates signed launch identity and polls a
+private, expiring session to approve Google sign-in without a chat confirmation.
+The external Google callback records a result; only the bound Mini App session
+can approve provisioning. Legacy Telegram confirmation links remain supported.
+This example is separate from the platform-owned managed-gateway service.
+
 - Public ingress is gateway-only; external webhook/API routes are implemented in `gateway/` and forwarded internally.
 - Bundled-skill outbound API calls that require credentials use the Credential Execution Service (CES) tools (`make_authenticated_request`, `run_authenticated_command`) rather than manual token plumbing or proxied shell execution. See `assistant/docs/credential-execution-service.md`.
 - Managed shared-identity channel routing runs in a separate managed-gateway service lane from the per-assistant `gateway/` lane. The deployable managed-gateway runtime is platform-owned; this repo keeps public contracts/fixtures under `gateway-managed/`.

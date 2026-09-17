@@ -1,0 +1,131 @@
+diff --git a/assistant/src/credential-health/credential-health-service.ts b/assistant/src/credential-health/credential-health-service.ts
+--- a/assistant/src/credential-health/credential-health-service.ts
++++ b/assistant/src/credential-health/credential-health-service.ts
+@@ -136,7 +136,7 @@ async function pingProvider(
+     if (response.ok) {
+       return { ok: true, authError: false };
+     }
+-    if (response.status === 401 || response.status === 403) {
++    if (response.status === 401) {
+       return { ok: false, authError: true };
+     }
+     return { ok: false, authError: false };
+@@ -148,7 +148,7 @@ async function pingProvider(
+ 
+ /**
+  * Map a pingProvider result onto a CredentialHealthResult, or null when the
+- * ping succeeded. `authErrorContext` distinguishes whether a 401/403 came
++ * ping succeeded. `authErrorContext` distinguishes whether a 401 came
+  * after a refresh attempt (refreshable connection) or directly from the
+  * stored token (manual-token / no-refresh connection) — the latter is the
+  * historical message wording.
+@@ -171,7 +171,7 @@ function pingResultToHealthFailure(
+     return {
+       ...base,
+       status: "revoked",
+-      details: `${provider} token was rejected (401/403)${suffix}. The token may have been revoked. Re-authorization required.`,
++      details: `${provider} token was rejected (401)${suffix}. The token may have been revoked. Re-authorization required.`,
+       canAutoRecover: false,
+     };
+   }
+@@ -858,8 +858,8 @@ export async function checkAllCredentials(): Promise<CredentialHealthReport> {
+ 
+ /**
+  * Check credential health for a single provider. Returns the health
+- * result for the most recent active connection, or null if no connection
+- * exists.
++ * result for the requested connection, or the most recent active connection
++ * when no ID is supplied. Returns null if that connection does not exist.
+  *
+  * Checks BYO connections first; if none exist, falls back to checking
+  * managed connections on the platform.
+@@ -868,6 +868,7 @@ export async function checkAllCredentials(): Promise<CredentialHealthReport> {
+  */
+ export async function checkCredentialForProvider(
+   provider: string,
++  connectionId?: string,
+ ): Promise<CredentialHealthResult | null> {
+   const providerRow = getProvider(provider);
+   if (!providerRow) {
+@@ -879,7 +880,11 @@ export async function checkCredentialForProvider(
+   if (await isManagedProvider(providerRow)) {
+     const managedResults = await checkManagedProvider(providerRow);
+     if (managedResults.length > 0) {
+-      return managedResults[0]!;
++      return connectionId
++        ? (managedResults.find(
++            (result) => result.connectionId === connectionId,
++          ) ?? null)
++        : managedResults[0]!;
+     }
+     return null;
+   }
+@@ -892,9 +897,10 @@ export async function checkCredentialForProvider(
+     connections = [];
+   }
+ 
+-  if (connections.length > 0) {
+-    const conn = connections[0]!;
+-
++  const conn = connectionId
++    ? connections.find((connection) => connection.id === connectionId)
++    : connections[0];
++  if (conn) {
+     return checkConnection({
+       connectionId: conn.id,
+       provider: conn.provider,
+diff --git a/assistant/src/heartbeat/heartbeat-service.ts b/assistant/src/heartbeat/heartbeat-service.ts
+--- a/assistant/src/heartbeat/heartbeat-service.ts
++++ b/assistant/src/heartbeat/heartbeat-service.ts
+@@ -786,6 +786,19 @@ export class HeartbeatService {
+           sourceChannel: "watcher",
+           sourceContextId: result.connectionId,
+           dedupeKey: `credential-health:${result.connectionId}:${result.status}`,
++          isStillCurrent: async () => {
++            const { checkCredentialForProvider } =
++              await import("../credential-health/credential-health-service.js");
++            const current = await checkCredentialForProvider(
++              result.provider,
++              result.connectionId,
++            );
++            return (
++              current?.status === result.status &&
++              JSON.stringify([...current.missingScopes].sort()) ===
++                JSON.stringify([...result.missingScopes].sort())
++            );
++          },
+           attentionHints: {
+             requiresAction: true,
+             urgency,
+diff --git a/assistant/src/notifications/emit-signal.ts b/assistant/src/notifications/emit-signal.ts
+--- a/assistant/src/notifications/emit-signal.ts
++++ b/assistant/src/notifications/emit-signal.ts
+@@ -202,6 +202,8 @@ export interface EmitSignalParams<TEventName extends string = string> {
+   conversationAffinityHint?: Partial<Record<string, string>>;
+   /** Optional deduplication key. */
+   dedupeKey?: string;
++  /** Revalidate source evidence after composition and before initial dispatch. */
++  isStillCurrent?: () => Promise<boolean>;
+   /**
+    * Optional callback invoked immediately when the broadcaster pairs a vellum
+    * conversation and emits `notification_conversation_created`.
+@@ -520,6 +523,18 @@ export async function emitNotificationSignal<TEventName extends string>(
+       }
+     }
+ 
++    if (params.isStillCurrent && !(await params.isStillCurrent())) {
++      setEventDedupeKey(signalId, null);
++      return {
++        signalId,
++        deduplicated: false,
++        dispatched: false,
++        reason: "Source evidence changed before dispatch",
++        deliveryResults: [],
++        pipelineFailed: false,
++      };
++    }
++
+     // Step 4: Dispatch through the broadcaster
+     // Note: notification_conversation_created events are emitted eagerly inside
+     // the broadcaster as soon as vellum conversation pairing succeeds, rather
+

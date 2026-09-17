@@ -1,0 +1,27 @@
+{
+  "name": "vellum-hosted-demo",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "22.22.2"
+  },
+  "scripts": {
+    "dev": "bun src/local.ts",
+    "test": "bun test tests",
+    "typecheck": "tsc --noEmit",
+    "migrate": "bun scripts/migrate.ts",
+    "preflight": "bun scripts/preflight.ts",
+    "reset-tenant": "bun scripts/reset-tenant.ts"
+  },
+  "dependencies": {
+    "@daytona/sdk": "0.214.0",
+    "@vercel/functions": "3.9.8",
+    "postgres": "3.4.9",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@types/bun": "1.4.2",
+    "typescript": "7.0.2"
+  }
+}

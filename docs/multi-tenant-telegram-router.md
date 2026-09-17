@@ -112,3 +112,20 @@ nothing in this repo provides it. `gateway/src/routing/resolve-assistant.ts` is
 explicit that a gateway process fronts exactly one daemon.
 
 A runnable reference router lives in `examples/multi-tenant-telegram-router/`.
+
+The [Vercel/Daytona demo](../examples/vercel-daytona/README.md) adds persistent
+tenant routing, an encrypted delivery inbox with retries, Google sign-in with
+Telegram identity confirmation via a one-use deep-link button, sandbox provisioning, and native Google OAuth
+callback routing. Its deployment and webhook cutover are explicit operator steps.
+The optional `/connect outlook` command issues a provider-bound ticket, registers
+the Microsoft app through the selected tenant gateway, and reuses the cookie-bound
+OAuth callback router. Mail and calendar tokens remain in that sandbox's credential
+store. Existing tenants do not require a reset or reprovisioning.
+WhatsApp uses `/webhooks/whatsapp` with raw-body signature verification, explicit
+business/number filtering and durable deduplication. Google-verified owner email
+and one-use same-channel confirmation link a WhatsApp identity to an existing
+assistant or provision a new one. The additive `merged_into` column preserves
+pending identity records and historical jobs while resolving to one owner.
+An optional Mini App flow binds Telegram's signed launch data to an expiring
+server session. Google sign-in runs in the external browser, and the original
+Mini App polls to complete identity linking without sending a chat command.

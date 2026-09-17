@@ -1,0 +1,69 @@
+diff --git a/assistant/src/messaging/providers/telegram-bot/send.ts b/assistant/src/messaging/providers/telegram-bot/send.ts
+index 1951d48b1d..20769f00c9 100644
+--- a/assistant/src/messaging/providers/telegram-bot/send.ts
++++ b/assistant/src/messaging/providers/telegram-bot/send.ts
+@@ -210,11 +210,18 @@ export async function sendTelegramReply(
+       payload.reply_markup = buildInlineKeyboard(approval);
+     }
+ 
+-    const sent = await callTelegramBotApi<TelegramMessage>(
+-      "sendMessage",
+-      payload,
+-    );
+-    ids.push(sentMessageId(sent));
++    try {
++      const sent = await callTelegramBotApi<TelegramMessage>(
++        "sendMessage",
++        payload,
++      );
++      ids.push(sentMessageId(sent));
++    } catch (error) {
++      if (ids.length > 0) {
++        throw new Error("Telegram reply was partially delivered", { cause: error });
++      }
++      throw error;
++    }
+   }
+ 
+   log.debug({ chatId, chunks: chunks.length }, "Telegram reply sent");
+diff --git a/assistant/src/notifications/adapters/telegram.ts b/assistant/src/notifications/adapters/telegram.ts
+index 6fd17752b9..5357b02ac9 100644
+--- a/assistant/src/notifications/adapters/telegram.ts
++++ b/assistant/src/notifications/adapters/telegram.ts
+@@ -4,10 +4,11 @@
+  *
+  * When the delivery payload carries an `approvalContext` (built centrally
+  * by the broadcaster), inline keyboard buttons ("Approve once", "Reject")
+- * are attached. If the rich delivery fails, the adapter falls back to
+- * plain text with typed-command instructions.
++ * are attached. A confirmed rejection before any chunk is delivered permits
++ * plain text fallback with typed-command instructions.
+  */
+ 
++import { TelegramNonRetryableError } from "../../messaging/providers/telegram-bot/api.js";
+ import {
+   editTelegramMessage,
+   sendTelegramReply,
+@@ -55,8 +56,6 @@ export class TelegramAdapter implements ChannelAdapter {
+ 
+     try {
+       if (rendersActions(approval)) {
+-        // Attempt rich delivery with inline keyboard buttons.
+-        // On failure, fall back to plain text below.
+         try {
+           const sent = await sendTelegramReply(chatId, messageText, approval);
+ 
+@@ -69,9 +68,12 @@ export class TelegramAdapter implements ChannelAdapter {
+           // (in-place withdrawal when the request resolves elsewhere).
+           return { success: true, messageId: sent.lastMessageId };
+         } catch (richErr) {
++          if (!(richErr instanceof TelegramNonRetryableError)) {
++            throw richErr;
++          }
+           log.warn(
+             { err: richErr, sourceEventName: payload.sourceEventName, chatId },
+-            "Rich Telegram delivery failed — falling back to plain text",
++            "Telegram rejected inline buttons; falling back to plain text",
+           );
+         }
+       }
