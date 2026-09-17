@@ -265,6 +265,17 @@ describe("buildSystemPrompt — default persona trust-class guardrail", () => {
   });
 });
 
+describe("bundled assistant voice", () => {
+  test("frames the assistant as the user's second in command", () => {
+    const soul = readFileSync(
+      join(import.meta.dirname!, "..", "templates", "SOUL.md"),
+      "utf-8",
+    );
+    expect(soul).toContain("as your second in command");
+    expect(soul).not.toContain("bunch of stuff. web research");
+  });
+});
+
 describe("buildSystemPrompt — hasNoClient no longer affects the prompt", () => {
   beforeEach(() => {
     mkdirSync(TEST_DIR, { recursive: true });
