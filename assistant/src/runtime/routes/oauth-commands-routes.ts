@@ -41,11 +41,9 @@ import {
   listConnections,
   type OAuthProviderRow,
 } from "../../oauth/oauth-store.js";
-import { missingScopesForStoredToken } from "../../oauth/scope-utils.js";
 import { VellumPlatformClient } from "../../platform/client.js";
 import { withValidToken } from "../../security/token-manager.js";
 import { matchHostPattern } from "../../tools/credentials/host-pattern-match.js";
-import { parseJsonSafe } from "../../util/json.js";
 import { getLogger } from "../../util/logger.js";
 import {
   findContentTypeHeader,
@@ -231,31 +229,6 @@ function assertOAuthRequestUrlAllowed(
       `OAuth request URL host "${parsedUrl.hostname}" is not allowed for "${providerRow.provider}". Allowed hosts: ${allowedHostPatterns.join(", ")}.`,
     );
   }
-}
-
-/**
- * Required scopes the resolved connection's stored grant lacks. Credential
- * health measures the same thing on the heartbeat; measuring it on the
- * request names the gap at the moment a call may depend on it, since a
- * connection made before a scope was required keeps working for every call
- * that does not need it. A managed connection has no local row and reports
- * nothing.
- */
-function missingScopesForConnection(
-  providerRow: OAuthProviderRow,
-  connectionId: string,
-): string[] {
-  const row = getConnection(connectionId);
-  if (!row) {
-    return [];
-  }
-  return missingScopesForStoredToken(
-    parseJsonSafe<string[]>(providerRow.defaultScopes ?? "[]") ?? [],
-    parseJsonSafe<Record<string, string>>(providerRow.authorizeParams ?? "") ??
-      undefined,
-    providerRow.scopeSeparator,
-    parseJsonSafe<string[]>(row.grantedScopes ?? "[]") ?? [],
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1001,7 +974,16 @@ export async function handleRequest({ body = {} }: RouteHandlerArgs) {
       `used "${selected}". Pass --account to select a specific one.`;
   }
 
-  if (response.status === 401 || response.status === 403) {
+  if (
+    b.provider === "google" &&
+    response.status === 403 &&
+    isGoogleApiDisabled(response.body)
+  ) {
+    result.hint =
+      "The Google API is disabled in the OAuth application's Google Cloud project. " +
+      "The application operator must enable the requested API, then retry this request. " +
+      "Reconnecting the account does not enable an API or repair this configuration error.";
+  } else if (response.status === 401 || response.status === 403) {
     // The recovery steps follow the credential's kind, not the door the
     // request came through: a channel bot's token was stored by the channel's
     // setup, so the OAuth status and connect commands cannot repair it.
@@ -1033,16 +1015,32 @@ export async function handleRequest({ body = {} }: RouteHandlerArgs) {
       `(e.g. https://host/full/path) so the host and full path are set explicitly.`;
   }
 
-  const missingScopes = missingScopesForConnection(providerRow, connection.id);
-  if (missingScopes.length > 0) {
-    const scopeHint =
-      `The ${b.provider} connection is missing required scopes: ${missingScopes.join(", ")}. ` +
-      `It was connected before they were required, so calls that need them fail. ` +
-      `Reconnect it from Integrations, or run 'assistant oauth connect ${b.provider}', to grant them.`;
-    result.hint = result.hint ? `${scopeHint}\n\n${result.hint}` : scopeHint;
-  }
-
   return result;
+}
+
+function isGoogleApiDisabled(body: unknown): boolean {
+  if (!body || typeof body !== "object" || !("error" in body)) {
+    return false;
+  }
+  const error = body.error;
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const entries = [
+    ...("errors" in error && Array.isArray(error.errors) ? error.errors : []),
+    ...("details" in error && Array.isArray(error.details)
+      ? error.details
+      : []),
+  ];
+  return entries.some((entry: unknown) => {
+    return (
+      !!entry &&
+      typeof entry === "object" &&
+      "reason" in entry &&
+      (entry.reason === "SERVICE_DISABLED" ||
+        entry.reason === "accessNotConfigured")
+    );
+  });
 }
 
 /** True when the response's Content-Type header indicates an HTML body. */

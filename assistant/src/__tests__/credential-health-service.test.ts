@@ -39,7 +39,7 @@ let mockFetchThrows = false;
 // Per-test refresh outcome — drives the withValidToken mock.
 //   "ok"          → refresh succeeds (or wasn't needed); callback runs with token
 //   "refresh_failed" → refresh throws TokenExpiredError (revoked refresh token)
-type RefreshOutcome = "ok" | "refresh_failed";
+type RefreshOutcome = "ok" | "refresh_failed" | "recover_401";
 let mockRefreshOutcome: RefreshOutcome = "ok";
 
 // Managed-path mock state.
@@ -119,7 +119,20 @@ mock.module("../security/token-manager.js", () => ({
       secureKeyValues.get(
         `oauth_connection/${opts.connectionId}/access_token`,
       ) ?? "refreshed-token";
-    return callback(token);
+    try {
+      return await callback(token);
+    } catch (error) {
+      if (
+        mockRefreshOutcome === "recover_401" &&
+        error instanceof Error &&
+        "status" in error &&
+        error.status === 401
+      ) {
+        mockFetchResponse = { ok: true, status: 200 };
+        return callback("refreshed-token");
+      }
+      throw error;
+    }
   },
 }));
 
@@ -424,6 +437,20 @@ describe("credential-health-service", () => {
     expect(report.results[0]!.details).toContain("after a refresh attempt");
   });
 
+  test("Outlook health retries an unexpected 401 through the shared token manager", async () => {
+    mockRefreshOutcome = "recover_401";
+    mockFetchResponse = { ok: false, status: 401 };
+    addProvider("outlook", { pingUrl: "https://graph.microsoft.com/v1.0/me" });
+    addConnection("outlook", "conn-1", {
+      expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+      hasRefreshToken: true,
+    });
+    setToken("conn-1");
+    const result = await checkCredentialForProvider("outlook", "conn-1");
+    expect(result?.status).toBe("healthy");
+    expect(result?.canAutoRecover).toBe(true);
+  });
+
   test("returns expiring when token expires within 7 days without refresh token", async () => {
     addProvider("google");
     addConnection("google", "conn-1", {
@@ -534,6 +561,32 @@ describe("credential-health-service", () => {
     const report = await checkAllCredentials();
     expect(report.results[0]!.status).toBe("ping_failed");
   });
+
+  for (const hasRefreshToken of [false, true]) {
+    test(`Outlook 403 does not claim revoked consent (refresh token: ${hasRefreshToken})`, async () => {
+      mockFetchResponse = { ok: false, status: 403 };
+      addProvider("outlook", {
+        pingUrl: "https://graph.microsoft.com/v1.0/me",
+      });
+      addConnection("outlook", "conn-1", {
+        expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+        hasRefreshToken,
+        accountInfo: "user@example.com",
+      });
+      setToken("conn-1");
+
+      const report = await checkAllCredentials();
+      expect(report.results[0]!.status).toBe("ping_failed");
+      expect(report.results[0]!.details).not.toContain(
+        "Re-authorization required",
+      );
+
+      mockFetchResponse = { ok: true, status: 200 };
+      const recovered = await checkAllCredentials();
+      expect(recovered.results[0]!.status).toBe("healthy");
+      expect(recovered.unhealthy).toHaveLength(0);
+    });
+  }
 
   test("returns ping_failed on network error (does not throw)", async () => {
     mockFetchThrows = true;
@@ -755,6 +808,26 @@ describe("credential-health-service", () => {
   });
 
   describe("checkCredentialForProvider", () => {
+    test("rechecks the requested account rather than a different healthy account", async () => {
+      addProvider("outlook");
+      addConnection("outlook", "conn-healthy", {
+        accountInfo: "user@example.com",
+      });
+      addConnection("outlook", "conn-missing", {
+        accountInfo: "other@example.com",
+      });
+      setToken("conn-healthy");
+      const result = await checkCredentialForProvider(
+        "outlook",
+        "conn-missing",
+      );
+      expect(result?.connectionId).toBe("conn-missing");
+      expect(result?.status).toBe("missing_token");
+      expect(
+        await checkCredentialForProvider("outlook", "conn-removed"),
+      ).toBeNull();
+    });
+
     test("returns null when no connections exist", async () => {
       const result = await checkCredentialForProvider("google");
       expect(result).toBeNull();

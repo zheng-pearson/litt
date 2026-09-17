@@ -967,10 +967,7 @@ describe("POST oauth/request", () => {
     expect(mockResolveRequests).toHaveLength(0);
   });
 
-  test("names the required scopes a stored grant lacks on the request itself", async () => {
-    // A connection made before a scope was required keeps working for every
-    // call that does not need it, so the caller must be told on the request,
-    // not only by the next health check.
+  test("does not treat optional provider defaults as requirements for a successful request", async () => {
     const seed = PROVIDER_SEED_DATA.slack;
     mockProviders.slack = {
       ...seededProvider("slack"),
@@ -994,8 +991,7 @@ describe("POST oauth/request", () => {
     )) as { ok: boolean; hint?: string };
 
     expect(stale.ok).toBe(true);
-    expect(stale.hint).toContain("files:read");
-    expect(stale.hint).toContain("oauth connect slack");
+    expect(stale.hint).toBeUndefined();
 
     mockAllConnections.slack = [
       {
@@ -1011,6 +1007,26 @@ describe("POST oauth/request", () => {
     )) as { hint?: string };
     expect(current.hint).toBeUndefined();
   });
+
+  test.each(["SERVICE_DISABLED", "accessNotConfigured"])(
+    "Google %s points to API enablement, not reconnection",
+    async (reason) => {
+      mockResolveResponse = {
+        status: 403,
+        headers: {},
+        body: { error: { details: [{ reason }] } },
+      };
+      const result = (await getRoute("POST", "oauth/request").handler(
+        makeArgs({
+          body: { provider: "google", url: "https://api.google.com/v1/me" },
+        }),
+      )) as { ok: boolean; hint?: string };
+      expect(result.ok).toBe(false);
+      expect(result.hint).toContain("operator must enable");
+      expect(result.hint).not.toContain("oauth connect");
+      expect(result.hint).not.toContain("expired");
+    },
+  );
 
   test("allows cross-host absolute URLs declared by provider injection templates", async () => {
     mockProviders.google = {

@@ -136,7 +136,7 @@ async function pingProvider(
     if (response.ok) {
       return { ok: true, authError: false };
     }
-    if (response.status === 401 || response.status === 403) {
+    if (response.status === 401) {
       return { ok: false, authError: true };
     }
     return { ok: false, authError: false };
@@ -148,9 +148,9 @@ async function pingProvider(
 
 /**
  * Map a pingProvider result onto a CredentialHealthResult, or null when the
- * ping succeeded. `authErrorContext` distinguishes whether a 401/403 came
+ * ping succeeded. `authErrorContext` distinguishes whether a 401 came
  * after a refresh attempt (refreshable connection) or directly from the
- * stored token (manual-token / no-refresh connection) — the latter is the
+ * stored token (manual-token / no-refresh connection). The latter is the
  * historical message wording.
  */
 type PingFailureContext = "after_refresh" | "no_refresh";
@@ -171,7 +171,7 @@ function pingResultToHealthFailure(
     return {
       ...base,
       status: "revoked",
-      details: `${provider} token was rejected (401/403)${suffix}. The token may have been revoked. Re-authorization required.`,
+      details: `${provider} token was rejected (401)${suffix}. The token may have been revoked. Re-authorization required.`,
       canAutoRecover: false,
     };
   }
@@ -327,9 +327,23 @@ async function checkConnection(
 
     if (hasRefreshToken) {
       try {
-        pingResult = await withValidToken(provider, runPing, { connectionId });
+        pingResult = await withValidToken(
+          provider,
+          async (validToken) => {
+            const result = await runPing(validToken);
+            if (result.authError) {
+              throw Object.assign(new Error("Credential ping rejected"), {
+                status: 401,
+              });
+            }
+            return result;
+          },
+          { connectionId },
+        );
       } catch (err) {
-        if (err instanceof TokenExpiredError) {
+        if (err instanceof Error && "status" in err && err.status === 401) {
+          pingResult = { ok: false, authError: true };
+        } else if (err instanceof TokenExpiredError) {
           // Refresh itself failed (revoked refresh token, invalid_grant, etc.)
           return {
             ...base,
@@ -337,8 +351,9 @@ async function checkConnection(
             details: `${provider} token refresh failed. The refresh token may have been revoked. Re-authorization required.`,
             canAutoRecover: false,
           };
+        } else {
+          throw err;
         }
-        throw err;
       }
       authContext = "after_refresh";
     } else {
@@ -858,8 +873,8 @@ export async function checkAllCredentials(): Promise<CredentialHealthReport> {
 
 /**
  * Check credential health for a single provider. Returns the health
- * result for the most recent active connection, or null if no connection
- * exists.
+ * result for the requested connection, or the most recent active connection
+ * when no ID is supplied. Returns null if that connection does not exist.
  *
  * Checks BYO connections first; if none exist, falls back to checking
  * managed connections on the platform.
@@ -868,6 +883,7 @@ export async function checkAllCredentials(): Promise<CredentialHealthReport> {
  */
 export async function checkCredentialForProvider(
   provider: string,
+  connectionId?: string,
 ): Promise<CredentialHealthResult | null> {
   const providerRow = getProvider(provider);
   if (!providerRow) {
@@ -879,7 +895,11 @@ export async function checkCredentialForProvider(
   if (await isManagedProvider(providerRow)) {
     const managedResults = await checkManagedProvider(providerRow);
     if (managedResults.length > 0) {
-      return managedResults[0]!;
+      return connectionId
+        ? (managedResults.find(
+            (result) => result.connectionId === connectionId,
+          ) ?? null)
+        : managedResults[0]!;
     }
     return null;
   }
@@ -892,9 +912,10 @@ export async function checkCredentialForProvider(
     connections = [];
   }
 
-  if (connections.length > 0) {
-    const conn = connections[0]!;
-
+  const conn = connectionId
+    ? connections.find((connection) => connection.id === connectionId)
+    : connections[0];
+  if (conn) {
     return checkConnection({
       connectionId: conn.id,
       provider: conn.provider,
