@@ -82,6 +82,82 @@ Subcommands:
 Run with <subcommand> --help for subcommand-specific options.`);
 }
 
+function localDateParts(now: Date, timeZone: string): [number, number, number] {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const value = (type: Intl.DateTimeFormatPartTypes): number =>
+    Number(parts.find((part) => part.type === type)?.value);
+  return [value("year"), value("month"), value("day")];
+}
+
+function localMidnightUtc(
+  year: number,
+  month: number,
+  day: number,
+  timeZone: string,
+): Date {
+  const desired = Date.UTC(year, month - 1, day);
+  let guess = desired;
+  for (let iteration = 0; iteration < 3; iteration++) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date(guess));
+    const value = (type: Intl.DateTimeFormatPartTypes): number =>
+      Number(parts.find((part) => part.type === type)?.value);
+    const observed = Date.UTC(
+      value("year"),
+      value("month") - 1,
+      value("day"),
+      value("hour"),
+      value("minute"),
+      value("second"),
+    );
+    guess += desired - observed;
+  }
+  return new Date(guess);
+}
+
+function relativeDateRange(
+  relativeDate: string,
+  timeZone: string,
+): { start: string; end: string; localDate: string } {
+  if (relativeDate !== "today" && relativeDate !== "tomorrow") {
+    printError("--relative-date must be today or tomorrow");
+  }
+  const [year, month, day] = localDateParts(new Date(), timeZone);
+  const offset = relativeDate === "tomorrow" ? 1 : 0;
+  const target = new Date(Date.UTC(year, month - 1, day + offset));
+  const next = new Date(Date.UTC(year, month - 1, day + offset + 1));
+  const start = localMidnightUtc(
+    target.getUTCFullYear(),
+    target.getUTCMonth() + 1,
+    target.getUTCDate(),
+    timeZone,
+  );
+  const end = localMidnightUtc(
+    next.getUTCFullYear(),
+    next.getUTCMonth() + 1,
+    next.getUTCDate(),
+    timeZone,
+  );
+  return {
+    start: start.toISOString(),
+    end: end.toISOString(),
+    localDate: target.toISOString().slice(0, 10),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // list
 // ---------------------------------------------------------------------------
@@ -96,6 +172,8 @@ Options:
   --calendar-id      Calendar ID (default: primary calendar)
   --start-date-time  Start of time range (ISO 8601, default: now)
   --end-date-time    End of time range (ISO 8601)
+  --relative-date    Resolve today or tomorrow in --timezone
+  --timezone         IANA timezone used with --relative-date
   --max-results      Maximum number of events to return (default: 25, max: 250)
   --filter           OData $filter expression to append
   --order-by         OData $orderby expression
@@ -104,9 +182,16 @@ Options:
   }
 
   const calendarId = optionalArg(args, "calendar-id");
+  const relativeDate = optionalArg(args, "relative-date");
+  const timeZone = optionalArg(args, "timezone");
+  const relativeRange = relativeDate
+    ? relativeDateRange(relativeDate, timeZone ?? requireArg(args, "timezone"))
+    : undefined;
   const timeMin =
-    optionalArg(args, "start-date-time") ?? new Date().toISOString();
-  const timeMax = optionalArg(args, "end-date-time");
+    relativeRange?.start ??
+    optionalArg(args, "start-date-time") ??
+    new Date().toISOString();
+  const timeMax = relativeRange?.end ?? optionalArg(args, "end-date-time");
   const maxResults = Math.min(
     parseInt(optionalArg(args, "max-results") ?? "25", 10),
     250,
@@ -137,13 +222,17 @@ Options:
   if (!result.data.value?.length) {
     const suffix = resolvedAccount ? ` for ${resolvedAccount}` : "";
     ok(
-      `No events found in the specified time range${suffix}.`,
+      {
+        message: `No events found in the specified time range${suffix}.`,
+        localDate: relativeRange?.localDate,
+        events: [],
+      },
       resolvedAccount,
     );
     return;
   }
 
-  ok(result.data, resolvedAccount);
+  ok({ ...result.data, localDate: relativeRange?.localDate }, resolvedAccount);
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 ---
 name: outlook-calendar
-description: View Outlook Calendar events for any day, create and manage events, and check availability. For relative dates, mechanically resolve the local date from the configured user timezone before querying.
+description: View Outlook Calendar events for any day, create and manage events, and check availability. For today or tomorrow, use the script's --relative-date and --timezone options so the local date is resolved mechanically.
 compatibility: "Designed for Vellum personal assistants"
 metadata:
   icon: assets/icon.svg
@@ -35,6 +35,9 @@ All operations use a single CLI script that returns JSON:
 ```bash
 # List events in a date range
 bun scripts/outlook-cal.ts list --start-date-time "2024-01-15T00:00:00Z" --end-date-time "2024-01-22T00:00:00Z"
+
+# List tomorrow in the user's timezone without calculating UTC bounds yourself
+bun scripts/outlook-cal.ts list --relative-date tomorrow --timezone "America/New_York"
 
 # List events with an OData filter
 bun scripts/outlook-cal.ts list --filter "subject eq 'Team Meeting'"
