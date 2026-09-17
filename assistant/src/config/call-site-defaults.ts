@@ -32,6 +32,12 @@ type CallSiteDefaultConfig = {
 
 export const CALL_SITE_DEFAULTS: Record<LLMCallSite, CallSiteDefaultConfig> = {
   mainAgent: { profile: "balanced" },
+  channelFrontDoor: {
+    profile: "latency-optimized",
+    effort: "low",
+    thinking: { enabled: false },
+    maxTokens: 600,
+  },
   subagentSpawn: { profile: "balanced" },
   compactionAgent: { profile: "balanced" },
   patternScan: { profile: "balanced" },

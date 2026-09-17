@@ -1557,3 +1557,76 @@ describe("channel-retry-sweep", () => {
     expect(row?.processingAttempts).toBe(1); // still unburned
   });
 });
+
+test("cancelled concurrent work cannot be delivered by recovery", async () => {
+  resetTables();
+  const eventId = seedFailedEventWithTrustClass("guardian");
+  const { saveFrontDoorState, readFrontDoorState } =
+    await import("../runtime/routes/inbound-stages/channel-front-door-store.js");
+  saveFrontDoorState(eventId, {
+    rootConversationId: "root-123",
+    action: "start",
+    reply: "Checking.",
+    targetEventId: null,
+    replied: true,
+    suppressed: true,
+    completed: false,
+  });
+  getDb()
+    .update(channelInboundEvents)
+    .set({
+      processingStatus: "processed",
+      deliveryStatus: "failed",
+      retryAfter: Date.now() - 1,
+    })
+    .where(eq(channelInboundEvents.id, eventId))
+    .run();
+  const before = deliveryCalls.length;
+  await sweepFailedEvents(async () => {
+    throw new Error("Must not resume cancelled work");
+  });
+  expect(deliveryCalls).toHaveLength(before);
+  expect(readFrontDoorState(eventId)?.completed).toBe(true);
+  expect(
+    getDb()
+      .select()
+      .from(channelInboundEvents)
+      .where(eq(channelInboundEvents.id, eventId))
+      .get()?.deliveryStatus,
+  ).toBe("delivered");
+});
+
+test("task routing retains its root and original payload", async () => {
+  resetTables();
+  const { createConversation } =
+    await import("../persistence/conversation-crud.js");
+  const { saveFrontDoorState, recentFrontDoorStates, frontDoorRoot } =
+    await import("../runtime/routes/inbound-stages/channel-front-door-store.js");
+  const root = createConversation({});
+  const task = createConversation({
+    conversationType: "background",
+    source: "telegram_concurrent_task",
+    parentConversationId: root.id,
+  });
+  const eventId = seedFailedEventWithTrustClass("guardian");
+  saveFrontDoorState(eventId, {
+    rootConversationId: root.id,
+    taskConversationId: task.id,
+    taskContent: "Research the deal.",
+    action: "start",
+    reply: "Checking.",
+    targetEventId: null,
+    replied: true,
+    suppressed: false,
+    completed: false,
+  });
+  expect(frontDoorRoot(task.id)).toBe(root.id);
+  expect(recentFrontDoorStates(root.id)[0]?.eventId).toBe(eventId);
+  const row = getDb()
+    .select()
+    .from(channelInboundEvents)
+    .where(eq(channelInboundEvents.id, eventId))
+    .get();
+  expect(row?.conversationId).toBe(task.id);
+  expect(JSON.parse(row!.rawPayload!).content).toBe("retry me");
+});
