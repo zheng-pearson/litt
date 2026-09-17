@@ -323,18 +323,27 @@ export async function listEvents(
   options?: {
     top?: number;
     skip?: number;
+    startDateTime?: string;
+    endDateTime?: string;
     filter?: string;
     orderby?: string;
     select?: string;
     account?: string;
   },
 ): Promise<GraphResponse<OutlookCalendarEventListResponse>> {
-  const path =
-    calendarId && calendarId !== "primary"
-      ? `/v1.0/me/calendars/${encodeURIComponent(calendarId)}/events`
-      : "/v1.0/me/events";
+  const hasCalendarViewRange = Boolean(
+    options?.startDateTime && options?.endDateTime,
+  );
+  const collection = hasCalendarViewRange ? "calendarView" : "events";
+  const path = calendarId && calendarId !== "primary"
+    ? `/v1.0/me/calendars/${encodeURIComponent(calendarId)}/${collection}`
+    : `/v1.0/me/${collection}`;
 
   const query: Record<string, string> = {};
+  if (hasCalendarViewRange) {
+    query.startDateTime = options!.startDateTime!;
+    query.endDateTime = options!.endDateTime!;
+  }
   if (options?.top !== undefined) query["$top"] = String(options.top);
   if (options?.skip !== undefined) query["$skip"] = String(options.skip);
   if (options?.filter) query["$filter"] = options.filter;

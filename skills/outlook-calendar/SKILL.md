@@ -77,7 +77,7 @@ When the user wants to schedule something:
 - Use ISO 8601 format for dates and times (e.g., `2024-01-15T09:00:00-05:00`).
 - For all-day events, Outlook uses `dateTime` with an `isAllDay` flag — set the start and end as date-only values (e.g., `2024-01-15`).
 - Always ask the user for their timezone if it's not already known from context or their profile.
-- Before querying a relative date such as today or tomorrow, resolve the literal local date mechanically. Read the configured timezone with `assistant config get ui.userTimezone`, then on Linux run `user_tz="$(assistant config get ui.userTimezone)"; TZ="$user_tz" date +%F; TZ="$user_tz" date -d tomorrow +%F`. Use the applicable returned date for the calendar bounds. Do not derive it from UTC or do the date arithmetic mentally.
+- Before querying a relative date such as today or tomorrow, resolve the literal local date mechanically. Read the configured timezone with `assistant config get ui.userTimezone`, then on Linux run `user_tz="$(assistant config get ui.userTimezone)"; TZ="$user_tz" date +%F; TZ="$user_tz" date -d tomorrow +%F`. Use the applicable returned date for the calendar bounds and repeat that same date in the final answer. Do not derive it from UTC, advance it again, or do the date arithmetic mentally.
 - When listing events, display times in the user's local timezone.
 - **Timezone edge case**: When `dateTime` already includes a UTC offset (e.g., `2024-01-15T09:00:00-05:00`), do not send a separate `timeZone` parameter — the offset in the datetime string is authoritative and sending both can cause conflicts.
 

@@ -115,21 +115,10 @@ Options:
   const orderBy = optionalArg(args, "order-by");
   const account = optionalArg(args, "account");
 
-  // Build OData $filter from time range and optional user query
-  const filterParts: string[] = [];
-  if (timeMin) {
-    filterParts.push(`start/dateTime ge '${timeMin}'`);
-  }
-  if (timeMax) {
-    filterParts.push(`start/dateTime le '${timeMax}'`);
-  }
-  if (query) {
-    filterParts.push(query);
-  }
-  const filter = filterParts.length > 0 ? filterParts.join(" and ") : undefined;
-
   const result = await listEvents(calendarId, {
-    filter,
+    startDateTime: timeMax ? timeMin : undefined,
+    endDateTime: timeMax,
+    filter: query,
     top: maxResults,
     orderby: orderBy,
     account,
