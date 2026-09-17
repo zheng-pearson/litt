@@ -975,14 +975,19 @@ A channel bot is the assistant's own identity on a channel and a separate creden
       prompt += `\n\n<heartbeat-disposition>\n${disposition}\n</heartbeat-disposition>`;
     }
 
-    if (completedRunCount < EARLY_HEARTBEAT_THRESHOLD) {
+    const engagementPrompts = getConfig().heartbeat.engagementPrompts !== false;
+    if (engagementPrompts && completedRunCount < EARLY_HEARTBEAT_THRESHOLD) {
       prompt += `\n\n<early-heartbeat>
 This is one of your first heartbeats. Your user hasn't heard from you yet and may not know you're here. Find something genuinely useful to share — a follow-up from a recent conversation, something you noticed, or a quick check-in. Lean toward surfacing it via the notifications skill this time. First impressions matter.
 </early-heartbeat>`;
     }
 
     let includedReengagement = false;
-    if (isShallowProfile() && isReengagementCooldownElapsed()) {
+    if (
+      engagementPrompts &&
+      isShallowProfile() &&
+      isReengagementCooldownElapsed()
+    ) {
       includedReengagement = true;
       prompt += `\n\n<relationship-depth>\nYou don't know much about this person yet — their profile is still sparse. If the moment feels right during this beat, gently invite them to share something about themselves. Not an interrogation — something natural like "I realized I don't actually know much about what you do. Fill me in sometime?" Only do this occasionally, not every beat. If they engage, save what you learn.\n</relationship-depth>`;
     }

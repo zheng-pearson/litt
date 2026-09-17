@@ -49,6 +49,7 @@ mock.module("../heartbeat/heartbeat-run-store.js", () => ({
 import { setConfig } from "./helpers/set-config.js";
 
 type HeartbeatSeed = {
+  engagementPrompts?: boolean;
   enabled: boolean;
   intervalMs: number;
   cronExpression: string | null;
@@ -885,6 +886,20 @@ describe("HeartbeatService", () => {
   });
 
   describe("relationship-depth prompt injection", () => {
+    test("workload reviews omit engagement nudges even for a new shallow profile", () => {
+      writeFileSync(join(testWorkspaceDir, "IDENTITY.md"), IDENTITY_TEMPLATE);
+      mockGuardianPersona = SCAFFOLD_PERSONA;
+      setHeartbeatConfig({ engagementPrompts: false });
+      const { prompt, includedReengagement } = createService().buildPrompt(
+        "- Review workload and stay silent unless actionable",
+        [],
+        0,
+      );
+      expect(prompt).not.toContain("<early-heartbeat>");
+      expect(prompt).not.toContain("<relationship-depth>");
+      expect(prompt).toContain("Review workload");
+      expect(includedReengagement).toBe(false);
+    });
     test("includes <relationship-depth> when profile is shallow", () => {
       writeFileSync(join(testWorkspaceDir, "IDENTITY.md"), IDENTITY_TEMPLATE);
       mockGuardianPersona = SCAFFOLD_PERSONA;

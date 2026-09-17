@@ -65,6 +65,12 @@ export const HeartbeatConfigSchema = z
       .describe(
         "Maximum heartbeats that can run per calendar day. Resets at midnight local time. Set to null for unlimited.",
       ),
+    engagementPrompts: z
+      .boolean()
+      .default(true)
+      .describe(
+        "Include introductory and relationship-building suggestions in heartbeat checks. Disable for workload-only reviews.",
+      ),
     disposition: z
       .string({ error: "heartbeat.disposition must be a string" })
       .default(
